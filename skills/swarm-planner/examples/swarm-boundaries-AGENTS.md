@@ -6,26 +6,32 @@
 
 ## Commands
 
-- Install: `<e.g., npm ci>`
-- Unit tests (safe for parallel `share` workspaces): `<e.g., npm run test:unit>`
-- Full integration tests (run sequentially by `verifier` only): `<e.g., npm run test:e2e>`
-- Typecheck / lint: `<e.g., npm run typecheck && npm run lint>`
+- Install: `<e.g., pnpm install --frozen-lockfile>`
+- Unit tests (safe for parallel `share` workspaces): `<e.g., pnpm test:unit>`
+- Full integration tests (run sequentially by `verifier` only): `<e.g., pnpm test:e2e>`
+- Typecheck / lint: `<e.g., pnpm typecheck && pnpm lint>`
 
 ## Ownership & Central Files
 
 - **Shared contracts** (`src/types/`, `prisma/schema.prisma`): Read-only during
-  parallel feature work; coordinate changes before editing.
+  parallel feature work; coordinate changes via `@coordinator` before editing.
 - **Central registries & lockfiles** (`package.json`, `package-lock.json`,
-  `src/routes.ts`): Do not edit directly inside feature branches without
-  coordinator approval.
+  `pnpm-lock.yaml`, `src/routes.ts`): Protected by `PreToolUse` guardrails
+  (unattended-safe `deny` by default; set `SWARM_GUARD_INTERACTIVE=1` only for
+  interactive single-session prompts). Escalate needed edits to `@coordinator`.
 
 ## No-Touch Zones
 
 - `<path/to/legacy-billing-cron>`: Production dependency; do not refactor.
 - `<path/to/generated>`: Auto-generated; regenerate via `<command>` only.
+- `.env` / `.env.*` secrets (excluding `.env.example`, `.env.sample`,
+  `.env.template`): Never read or edit directly.
 
 ## Verification & Git Hygiene
 
-- Commit finished work inside your `share` workspace before reporting `[done]`.
+- Commit sprint guardrails (`.agents/plugins/swarm-guardrails/`) before spawning
+  `share`/`branch` workers so worktrees inherit them, and disable or remove
+  temporary sprint guardrails after merge teardown.
+- Commit finished work inside your `share` worktree before reporting `[done]`.
 - Do not run `git push`.
 - Cite `#seq` numbers on the swarm board instead of pasting long logs.
