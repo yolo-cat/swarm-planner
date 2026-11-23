@@ -4,12 +4,18 @@ Taking over a legacy codebase carries hidden coupling, undocumented side
 effects, and missing tests. Never start by editing business logic across a
 large parallel swarm.
 
+> For the core Role-to-Model Strategy, File Ownership & Hook Signals table, and
+> Launch Templates, use the SSOT in
+> [task-matrices.md](./task-matrices.md#2-heterogeneous-role-model-strategy-swarm).
+> This playbook covers **legacy-specific deltas only**.
+
 ## Recommended Multi-Session & Hybrid Roadmap
 
 Split work across sessions—and pick the right engine per phase—rather than
-piling everything into one swarm:
+piling everything into one swarm (see Templates B, C, and D in
+[task-matrices.md](./task-matrices.md#4-ready-to-paste-launch-templates)):
 
-1. **Session 1 — Read-Only Cartography (`run_workflow` preferred; `/swarm` if interactive)**
+1. **Session 1 — Read-Only Cartography (`/run-workflow` preferred; `/swarm` if interactive)**
    - **Why `/run-workflow` often wins here**: Pure read-only scanning across
      modules does not require workers to chat on a board. A staged Python
      workflow (`phase("Discover")` -> `parallel(modules, ...)` on `flash` /
@@ -26,37 +32,38 @@ piling everything into one swarm:
      tests covering critical paths **without** altering production logic or
      weakening existing assertions.
    - Shard modules across `tester-1..k` (`workspace:"share"`), paired with 1
-     cross-model `verifier` (`inherit`) validating coverage and running full
-     integration suites sequentially.
+     cross-family `verifier` (`inherit`) validating real behavior (flagging
+     over-mocked stubs) and running full integration suites sequentially.
 3. **Session 3+ — Targeted Hardening & Fixes (`/swarm` or Single Session)**
-   - Tackle one bounded goal per session (or use a single agent for small
-     single-file fixes).
+   - Tackle one bounded goal per session (or fast-exit to Single Session /
+     `/plan` in Step 0 for small single-file fixes).
    - For mysterious bugs, run read-only archaeology (`git blame`, callers, data
      state) before assigning a fixer.
 
-## Legacy Hook Signals & Guardrails (`PreToolUse` / `SessionStart`)
+## Legacy-Specific Guardrail Deltas
 
-During Step 1 & Step 3, inspect the legacy repo for high-ROI hooks to include in
-`.agents/plugins/swarm-guardrails/`:
+Refer to the SSOT table in
+[task-matrices.md](./task-matrices.md#3-file-ownership-and-hook-signals-ssot) and
+validate model IDs via `python3 "<skill-dir>/scripts/model_matrix.py"` (global
+default `~/.gemini/config/skills/swarm-planner/scripts/model_matrix.py`,
+[model_matrix.py](../scripts/model_matrix.py)). For legacy repos, prioritize:
 
-- **Applied migrations lock**: `PreToolUse` `deny` edits to historical
-  `migrations/*` files so workers only create forward migrations when authorized.
-- **Shared DB / reset protection**: `PreToolUse` `deny` destructive commands
-  (`dropdb`, `--force-reset`, truncate scripts) when tests share local Docker/DB.
-- **Untouchable legacy crons / core modules**: `PreToolUse` `deny` or
-  `force_ask` on business-critical paths identified by the user.
-- **`SessionStart` pointer**: Inject `docs/system-map.md` and local test DB
-  constraints without consuming static `AGENTS.md` rule budget.
-
-## Role-Model Strategy for Legacy Work
-
-Verify available IDs and quotas with `scripts/model_matrix.py` first:
-- **Archaeology / Complex Bug Fixers (`entry-tracer`, `data-modeler`, Phase 3)**:
-  Assign `high`/`xhigh` reasoning models to trace indirect callers and state.
-- **Characterization Test Shards (`tester-1..k`)**: Fast, high-quota models once
-  behavior specs are clear.
-- **Verifier**: Use a different model family than the test/fix authors so it
-  independently flags over-mocked stubs and missing edge cases.
+- **Historical migrations lock**: `PreToolUse` `"deny"` on edits (and
+  `run_command` mutations) targeting applied `migrations/*` files so workers
+  only create forward migrations when authorized.
+- **Shared DB / reset protection**: `PreToolUse` `"deny"` on destructive
+  commands (`dropdb`, `--force-reset`, truncate scripts) when tests share local
+  Docker/DB.
+- **Untouchable legacy crons / core modules**: `PreToolUse` `"deny"` +
+  `@coordinator` escalation on business-critical paths identified in Step 3
+  (never `"ask"`/`"force_ask"` in unattended runs).
+- **Flat `SessionStart` pointer**: Inject `docs/system-map.md` (and `AGENTS.md`
+  when present) without consuming static rules budget.
+- **Pre-spawn commit & post-sprint teardown**: Commit/register
+  `.agents/plugins/swarm-guardrails/` (including `./hooks/pretool-guard.py`)
+  **before** spawning `share`/`branch` workers, and disable or remove the
+  temporary plugin after the sprint (`agy plugin disable swarm-guardrails` or
+  `"enabled": false`).
 
 ## Legacy Pitfalls to Guard Against
 
