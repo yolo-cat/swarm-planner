@@ -1,0 +1,40 @@
+{
+  "swarm-pretool-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./hooks/pretool-guard.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "swarm-posttool-format": {
+    "enabled": false,
+    "PostToolUse": [
+      {
+        "matcher": "write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c 'import sys,json; sys.stdin.read(); print(\"{}\")'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "swarm-session-context": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 -c 'import json; print(json.dumps({\"injectSteps\":[{\"systemMessage\":{\"systemMessage\":\"Swarm Guardrails active. Read docs/system-map.md before modifying shared modules.\"}}]}))'",
+        "timeout": 5
+      }
+    ]
+  }
+}
