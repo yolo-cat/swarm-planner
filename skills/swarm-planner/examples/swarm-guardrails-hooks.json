@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c 'import sys,json; sys.stdin.read(); print(\"{}\")'",
+            "command": "python3 -c 'import json,os,shutil,subprocess,sys\ntry:\n d=json.load(sys.stdin); a=(d.get(\"toolCall\") or {}).get(\"args\") or {}; p=a.get(\"Path\") or a.get(\"TargetFile\") or a.get(\"path\") or \"\"; c=d.get(\"cwd\") or os.getcwd(); t=p if os.path.isabs(p) else os.path.join(c,p); f=shutil.which(\"prettier\")\n if p and not d.get(\"error\") and f and os.path.isfile(t): subprocess.run([f,\"--write\",t],cwd=c,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)\nexcept Exception:\n pass\nprint(\"{}\")'",
             "timeout": 5
           }
         ]
@@ -32,7 +32,7 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "python3 -c 'import json; print(json.dumps({\"injectSteps\":[{\"systemMessage\":{\"systemMessage\":\"Swarm Guardrails active. Read docs/system-map.md before modifying shared modules.\"}}]}))'",
+        "command": "python3 -c 'import json,os,sys\ntry:\n d=json.load(sys.stdin)\nexcept Exception:\n d={}\nc=d.get(\"cwd\") or os.getcwd(); found=[f for f in (\"AGENTS.md\",\"docs/system-map.md\") if os.path.isfile(os.path.join(c,f))]; msg=\"Swarm Guardrails active.\"+(\" Read \"+\" and \".join(found)+\" before modifying shared modules.\" if found else \" Follow assigned file ownership boundaries and coordinate shared edits via @coordinator.\"); print(json.dumps({\"injectSteps\":[{\"systemMessage\":{\"systemMessage\":msg}}]}))'",
         "timeout": 5
       }
     ]
