@@ -63,3 +63,22 @@ Or use `make install-symlink` / `--symlink` for live-linked local development (r
 ./scripts/install.sh --symlink
 ./scripts/install.sh --uninstall
 ```
+
+## Changelog
+
+### `v0.3.0` (2026-11-24) — RSI Audit Hardening & Installer Drift Protection (`5128134` / `fe62d18`, `34cda07` / `cb853fb`)
+
+- **Installer & Build (`scripts/install.sh`, `Makefile`, `tests/test_install.py`)**: Added `--status` / `--check` repo-vs-installed drift detection, atomic `--copy` staging (`mktemp` + `rsync`/`cp -Rp` fallback), linked/dirty git worktree guard for `--symlink` (`--force`), `CDPATH=""` + `cd -P` safety, conflicting mode-flag rejection, default pre-install test execution with `--skip-tests`, `make lint-shell`, `make install-status`, and `PYTHONDONTWRITEBYTECODE=1 -B`.
+- **Guardrails & Hooks (`pretool-guard.py`, `swarm-guardrails-hooks.json`, `tests/test_pretool_guard.py`)**: Added `read_file|view_file` `.env` secret read blocking, fail-closed write/edit path checks, `run_command` enforcement of `PROTECTED_PATH_PATTERNS` and parser-bypass fixes (`>|`/`<>`, wrapper option-args, `cd`/`pushd`, subshells/`$()`, `ln`/`rsync`/`patch`, `npm ... install`, `$VAR` targets, macOS/Windows case-insensitive matching), and `PostToolUse` Prettier scoping (Prettier extensions inside `cwd`, excluding `package-lock.json`, `timeout=1.5`).
+- **Model Matrix (`model_matrix.py`, `tests/test_model_matrix.py`)**: Hardened `--validate` / `--from-swarm-json` / numeric quota parsing, wildcard concrete-ID suggestions, exit-2 malformed payload & `agy` stderr filtering, mixed-quota family normalization (`vendor`, `quota_uniform`, top-level `null`), pool-diversity classification, `--require-diverse`, and `--allowed-pool`.
+- **Skill Docs & Templates (`SKILL.md`, `references/*`, `swarm-boundaries-AGENTS.md`, `README.md`)**: Enforced `/run-workflow` coarse tiers (`inherit`/`flash_lite`/`flash`/`pro`) + `type_name="research"` + valid JSON Schema, aligned `swarm_pane`/`swarm_monitor` contracts, added single-family cross-variant pool and repo-vs-installed/worktree drift checks, fixed Template C writer ownership, removed coordinator teardown rules from worker `AGENTS.md`, and deduplicated `SKILL.md` (`-16.8%` size).
+
+### `v0.2.0` (2026-11-24) — Phase 1 Contract Hardening & SSOT Alignment (`091db07` / `e332eda`, `6270bfd` / `f60e52c`)
+
+- Hardened `model_matrix.py` (`--require-quota`, orchestrator & per-variant quota parsing, PTY/CR spinner filtering for `agy models`).
+- Hardened `pretool-guard.py` and `swarm-guardrails-hooks.json` with workspace/`artifactDirectoryPath` confinement, unattended-safe `"deny"` default (`SWARM_GUARD_INTERACTIVE=1` for interactive prompts), working `PostToolUse` formatter template (`enabled: false`), and conditional `SessionStart` injection for existing `AGENTS.md` / `docs/system-map.md`.
+- Introduced Step 0 fast-exit & Lightweight/Project-Level triage, three-way engine router, and consolidated SSOT templates across `SKILL.md`, `references/*`, and `README.md`.
+
+### `v0.1.0` (2026-11-24) — Initial Standalone Release (`d9abc18`)
+
+- Initialized the standalone `swarm-planner` skill repository with `SKILL.md`, `scripts/model_matrix.py`, reference playbooks & matrices, `.agents/plugins/swarm-guardrails/` examples, `scripts/install.sh`, `Makefile`, and initial `unittest` suite.
