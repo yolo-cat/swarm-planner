@@ -1,206 +1,137 @@
 # Task Configuration Matrices & Launch Templates (SSOT)
 
-This file is the **Single Source of Truth (SSOT)** for orchestration routing,
-session boundaries, role-to-model allocation, file ownership & hook signals,
-and ready-to-paste launch templates.
-
 ## 1. Orchestration Router & Scenario Matrix
 
-| Scenario | Recommended Engine | Pre-Launch Prerequisite | Workspace / Features | Verification / Focus |
+| Scenario | Engine | Prerequisite | Workspace / Features | Verification / Focus |
 | :--- | :--- | :--- | :--- | :--- |
-| **Small / Sequential Edit** | **Single Session** or `/plan` *(Step 0 fast-exit)* | None (skip `/swarm`) | Default workspace | Direct edits + unit test |
-| **Massive Audit / Pattern Scan** | **`/run-workflow`** | Define target list (or `call_tool` scan) & valid JSON `schema` | `inherit`, `type_name="research"` (or non-plan-gated custom agent), `parallel()` / `pipeline()` / `call_tool()` (`WaitMsBeforeAsync` <=10000 ms) + `flash`/`flash_lite` | Deterministic Python aggregation |
-| **Legacy Cartography (Phase 1)** | **`/run-workflow`** *(or `/swarm` if interactive cross-talk/`fork` needed)* | Forbid code edits; list top modules; designate writer for `docs/system-map.md` | `inherit` (`type_name="research"` in `/run-workflow`); compile to `docs/system-map.md` | Verified `file:line` evidence |
-| **Legacy Characterization Tests** | **`/swarm`** | Clean `git status` + branch-vs-`main` check; lock prod code & assertions; add migration/DB hooks | Authors `share`, Verifier `inherit`, `tasks` | Real behavior vs. over-mocking; single-verifier DB runs |
-| **Greenfield MVP Sprint** | **`/swarm`** | Clean `git status` + branch-vs-`main` check; scaffold + shared contracts + baseline build green | Authors `share`, Verifier `inherit`; `channel` *only if live `swarm` exposes `action:"channel"`* (else single-board `main`) | Contract conformance, zero duplicate helpers |
-| **Large Refactor / Migration** | **`/swarm`** *(or `/run-workflow` for mechanical transforms / bounded review-fix loops)* | Clean `git status` + branch-vs-`main` check; lock invariants & public signatures | `/swarm`: Migrators `share`, Verifier `inherit`, `tasks`; `/run-workflow`: `workspace="branch"`/`"share"` with edit-capable `type_name` + stateful `a = agent(...)` -> `await a(...)` review loop | Full build + regression suite |
-| **Multi-Role Code Audit** | **`/swarm`** *(cross-model review)* or **`/run-workflow`** *(checklist sweep)* | Define diff target (e.g., vs. `main`) | All `inherit` (`type_name="research"` in `/run-workflow`); `#seq` citations | Severity-ranked findings; optional `share` fixes |
-| **UI / Visual Polish** | **`/swarm`** | Clean `git status` + branch-vs-`main` check; specify target viewports & design tokens | Frontend `share`, Verifier `inherit`, `swarm_pane` (if in `<skills>`) | `plan.json` (after workers added) + worker own-line full-window `Screenshot:` milestones |
-| **Discovery -> Implementation** | **Hybrid** (Phase 1 `/run-workflow` -> Phase 2 `/swarm`) | Define committed repo-relative or absolute Phase 1 `<appData>/brain/<phase1-id>/scratch/...` handoff path & JSON `schema`; clean `git status` before Phase 2 | Fresh session per phase: Phase 1 `inherit` (`type_name="research"`); Phase 2 `share` + `inherit` | Human reviews handoff artifact + clean git checkpoint before launching Phase 2 in a fresh session |
+| **Small / Sequential** | **Single Session** / `/plan` | None (skip `/swarm`) | Default workspace | Direct edits + unit test |
+| **Massive Audit / Scan** | **`/run-workflow`** | Target list / `call_tool` & JSON `schema` | `inherit`, `type_name="research"`, `parallel()` / `pipeline()` / `call_tool()` + `flash`/`flash_lite` | Python aggregation |
+| **Legacy Cartography** | **`/run-workflow`** *(or `/swarm` `#seq`/`fork`)* | Forbid edits; list modules; 1 `docs/system-map.md` writer | `inherit` (`type_name="research"`) | Verified `file:line` in `docs/system-map.md` |
+| **Legacy Characterization** | **`/swarm`** | Clean git + branch-vs-`main`; lock prod code; DB hooks | Authors `share`, Verifier `inherit`, `tasks` | Real behavior; sequential DB |
+| **Greenfield MVP Sprint** | **`/swarm`** | Clean git + branch-vs-`main`; scaffold + contracts + green build | Authors `share`, Verifier `inherit`; `channel` *if supported* (else `main`) | Contract conformance & DRY |
+| **Large Refactor / Migration** | **`/swarm`** *(or `/run-workflow` transforms)* | Clean git + branch-vs-`main`; lock public signatures | `/swarm`: `share` + `inherit`, `tasks`; `/run-workflow`: `branch`/`share` + stateful `agent()` | Full build + regression suite |
+| **Multi-Role Code Audit** | **`/swarm`** or **`/run-workflow`** | Define diff target (e.g., vs. `main`) | All `inherit` (`type_name="research"` in `/run-workflow`); `#seq` citations | Ranked findings; optional `share` fixes |
+| **UI / Visual Polish** | **`/swarm`** | Clean git + branch-vs-`main`; viewports & tokens | Frontend `share`, Verifier `inherit`, `swarm_pane` (if in `<skills>`) | `plan.json` (post-add) + own-line full-window `Screenshot:` |
+| **Discovery -> Implement** | **Hybrid** (`/run-workflow` -> `/swarm`) | Committed repo path or absolute `<appData>/brain/<phase1-id>/scratch/...` & `schema` | Fresh session/phase: P1 `inherit` (`type_name="research"`); P2 `share`+`inherit` | Human review + clean git before P2 |
 
-> **Session-Boundary & Cross-Session Handoff Rules (SSOT)**:
-> - **Fresh Session Per Phase**: Keep the read-only `swarm-planner` pre-session separate from execution, and start a **fresh conversation session** between Phase 1 (`/run-workflow` discovery/cartography) and Phase 2 (`/swarm` implementation or characterization). Fresh sessions prevent Phase 1 transcripts from bloating Phase 2 context, avoid retired `/swarm` worker name collisions (`tester` -> `tester-2`), and enforce a human review + clean `git status --short` gate before spawning `share`/`branch` workers.
-> - **Handoff Artifact Paths (`<handoff-artifact-path>`)**: Across fresh sessions, handoff files MUST be either a **committed repo-relative path** (e.g., `docs/system-map.md`, committed before Phase 2 so `git status --short` stays clean for `share` worktrees) or an **explicit absolute Phase 1 scratch path** (`<appData>/brain/<phase1-id>/scratch/plan-manifest.json`). Never use a bare relative `scratch/...` path across sessions (it either points to Phase 1's unreachable per-conversation brain directory or leaves an untracked file in `cwd` that breaks Phase 2's clean-git prerequisite).
+> **Session-Boundary & Handoff-Path Rules (SSOT)**:
+> - **Fresh Session Per Phase**: Keep `swarm-planner` read-only; run Phase 1 (`/run-workflow`) and Phase 2 (`/swarm`) in **separate fresh sessions** (avoids transcript bloat, `tester` -> `tester-2` name collisions, and dirty git state).
+> - **Handoff Paths (`<handoff-artifact-path>`)**: Use a **committed repo-relative path** (`docs/system-map.md`) or an **explicit absolute Phase 1 scratch path** (`<appData>/brain/<phase1-id>/scratch/plan-manifest.json`)—never a bare relative `scratch/...` path.
 
 ## 2. Heterogeneous Role-Model Strategy (`/swarm`)
 
 > **Engine Model & Primitive Contract**:
-> - **`/run-workflow`** uses coarse model tiers only: `model="inherit"|"flash_lite"|"flash"|"pro"` (never pass exact `/swarm` catalog IDs into `run_workflow`, and never pass coarse tiers to `model_matrix.py --validate`).
->   - **Workspace & `type_name`**: Read-only passes MUST pass `workspace="inherit"` and `type_name="research"` (or a non-plan-gated custom agent if `research` is absent—never default `type_name="self"` on read-only passes when plan gating is active, which deadlocks on `[plan review due]`). Parallel mechanical code-editing transforms use `workspace="branch"` (isolated clone) or `workspace="share"` (shared repo worktree) with an edit-capable `type_name` (`"self"` or custom coder agent).
->   - **Primitives & Invocation**: Use `parallel(items, fn)` for concurrent fail-fast fan-out and `pipeline(items, fn)` for sequential one-at-a-time execution in item order; stateful multi-turn agents (`a = agent(prompt, role=..., ...)` -> `await a(turn_prompt, schema)` -> `del a`) for bounded deterministic review/fix loops; `await call_tool(name, **args)` for zero-LLM deterministic tool calls (set `WaitMsBeforeAsync` up to `10000` ms on `run_workflow` for quick same-turn tool fan-outs, and catch `ToolError` checking `e.denied` for pre-tool hook/permission rejections since workflows cannot prompt users); `await trajectory(last=..., types=..., tools=..., min_index=..., max_index=...)` to mine earlier conversation steps before `run_workflow` started (evicted steps have `status == "CLEARED"`); and `Args` (read as `args` dict), `Cwd`, and `ScriptPath` (prefer writing non-trivial scripts to `<appData>/brain/<id>/scratch/workflow.py` and passing `ScriptPath` for easy line-level fixes/reruns; set exactly one of `Script` or `ScriptPath`).
-> - **`/swarm`** (and Hybrid Phase 2) uses exact catalog IDs (including `low`/`medium`/`high`/`xhigh`/`max` effort suffixes) verified by [model_matrix.py](../scripts/model_matrix.py). Never use coarse aliases.
-
-Follow `SKILL.md` Steps 1 & 5 for `<skill-dir>` resolution, repo-vs-installed
-drift checks (`./scripts/install.sh --status` or `--check`), live catalog
-inspection (`--from-swarm-json -` preferred; `--from-agy` checks existence only
-with `quota=unknown`), and pre-flight validation:
-
-- `--allowed-pool <comma-separated-ids>`, `--require-diverse`, and
-  `--require-quota` **require `--validate <comma-separated-ids>`** (exiting `2`
-  if `--validate` is omitted). Unknown tokens in `--allowed-pool` fail
-  validation (exit `1`).
-- Adding `--format json` to `--validate` emits structured JSON on stdout (for
-  both exit `0` and exit `1`) with top-level keys `valid`, `results`,
-  `diversity`, `errors`, and `warnings` (`diversity` is computed only over
-  unique validated, in-pool, quota-ok models; `o1`/`o3`/`o4`/`gpt` normalize to
-  vendor `openai`, and `model` + `model-high` share a base family as
-  `single-variant`). Without `--validate`, `--format json` emits catalog family
-  metadata (`count`, `families` with `vendor`, `quota_uniform`,
-  `quotas_by_effort`).
-
-Per `native_swarm` rules, coordinators never switch models on their own
-initiative **except** when the user explicitly requests it **or** a member hits
-`[quota]`/capacity exhaustion (switching to the user's pre-approved fallback
-chain—staying strictly inside any user-restricted pool—or the coordinator's
-model only when unrestricted).
+> - **`/run-workflow`**: Coarse tiers only (`model="inherit"|"flash_lite"|"flash"|"pro"`—never exact `/swarm` IDs or `model_matrix.py --validate`) + JSON `schema`. Read-only passes: `workspace="inherit"`, `type_name="research"` (or non-plan-gated agent; never `type_name="self"`, which deadlocks on `[plan review due]`); mechanical edits: `workspace="branch"`/`"share"` + edit-capable `type_name`. Primitives: `parallel(items, fn)` (fail-fast), `pipeline(items, fn)` (sequential), stateful `a = agent(...)` -> `await a(prompt, schema)` -> `del a`, `call_tool(name, **args)` (`WaitMsBeforeAsync` <=10000 ms, `ToolError.denied`), `await trajectory(...)` (`status == "CLEARED"` if evicted), `Args`, `Cwd`, `ScriptPath` (`<appData>/brain/<id>/scratch/workflow.py`).
+> - **`/swarm`** (and Hybrid Phase 2): Exact catalog IDs (`low`/`medium`/`high`/`xhigh`/`max`) verified via [model_matrix.py](../scripts/model_matrix.py) (`SKILL.md` Steps 1 & 5: `<skill-dir>`, `--from-swarm-json -`, `--from-agy`, `./scripts/install.sh --status`/`--check`). `--allowed-pool`, `--require-diverse`, and `--require-quota` **require `--validate <ids>`** (exit `2` if omitted; unknown `--allowed-pool` tokens exit `1`). `--validate <ids> --format json` emits `{valid, results, diversity, errors, warnings}` on exit `0`/`1` (`o1`/`o3`/`o4`/`gpt` -> `openai`; `model` + `model-high` -> `single-variant`).
 
 | Role | Selection Principle | Rationale |
 | :--- | :--- | :--- |
-| **Coordinator** | High instruction-following / orchestrator variant | Tracks `#seq` references, handoffs, and merge order cleanly |
-| **Core / Complex Author** | High/XHigh/Max reasoning flagship exact model ID | Protects concurrency, state machines, and shared contracts |
-| **Routine Slice Author** | Fast, high-quota exact model ID (`low`/`medium` effort or fast variant) | Maximizes parallel throughput on CRUD, UI slices, and boilerplate |
-| **Verifier** | **Cross-family strong analytical model** *(or distinct variant / higher thinking effort within a user-restricted single-family pool, e.g., Gemini Neon vs. Hydrogen/Carbon/Argon)* | Independent "second pair of eyes" catches single-model blind spots even under single-family pool constraints |
-| **Monitor** *(standard when `swarm_monitor` is in `<skills>`)* | Inherits coordinator's model by default | Add whenever `swarm_monitor` is in `<skills>`; brief must state it is the stall monitor (only `monitor` loads `swarm_monitor`). Coordinator never assigns work to, replies to, or kills `monitor`, posts `@monitor resume` after restart, and posts standalone `[done] <summary>` (no `@` mentions) when finished so `monitor` kills its daemon cron |
-| **Quota Fallback Chain** | 1–2 pre-approved backup IDs per tier **within the user's approved pool** | Lets Coordinator `swarm{action:"model"}` hot-swap on `[quota]` without stopping or leaking outside a restricted pool (including same-family cross-variant/effort fallbacks) |
+| **Coordinator** | High instruction-following / orchestrator | Tracks `#seq`, handoffs, merge order |
+| **Core Author** | High/XHigh/Max reasoning flagship ID | Concurrency, state machines, contracts |
+| **Slice Author** | Fast, high-quota ID (`low`/`medium` effort) | Parallel CRUD, UI slices, boilerplate |
+| **Verifier** | **Cross-family analytical ID** *(or distinct variant/effort in 1-family pool, e.g., Neon vs. Hydrogen/Carbon/Argon)* | Catches single-model blind spots |
+| **Monitor** *(standard if `swarm_monitor` in `<skills>`)* | Inherits coordinator model | Stall-monitor brief; **only `monitor`** loads `swarm_monitor`. Never assign/reply/kill `monitor` (unless asked); `@monitor resume` on restart; standalone `[done] <summary>` (no `@`) when done |
+| **Quota Fallback** | 1–2 backup IDs/tier **in approved pool** | `swarm{action:"model"}` hot-swap on `[quota]` inside pool |
 
-> **Swarm UI Overview (`swarm_pane`) vs. Narrator (`swarm_narrator`)**: Gate on
-> `<skills>`. When `swarm_pane` is in `<skills>`, load `swarm_pane` **before**
-> adding/briefing the first workers and write
-> `<appData>/brain/<conversation id>/.system_generated/swarm/plan.json` **once
-> the workers are added** (`goal` in 4–8 words / <=12 max, `tasks`, and
-> `threads` in 1–6 outcome groups; **never** put statuses, blockers, or asks in
-> `plan.json`, and rewrite only when adding workers, moving work, or changing
-> the goal). When `swarm_pane` is present, never add a `narrator` unless the
-> user explicitly asks for one by name; if `swarm_pane` is absent from
-> `<skills>` and `swarm_narrator` is in `<skills>`, `native_swarm` falls back
-> to adding `narrator`.
+> **`swarm_pane` vs. `swarm_narrator`**: If `swarm_pane` is in `<skills>`, load pre-add and write `<appData>/brain/<conversation id>/.system_generated/swarm/plan.json` **once workers are added** (`goal.title` 4–8w, `goal.line` <=12w, `tasks`, 1–6 `threads`; no statuses/blockers/asks; rewrite only on roster/work/goal changes; no `narrator` unless asked, or `swarm_narrator` fallback if `swarm_pane` absent). UI work only: full-window `.png`/`.jpg`/`.jpeg`/`.webp` in `<appData>/brain/<conversation id>/` (same screen/size/theme; no crops/diffs) and own-line worker `Screenshot: <abs-path> | <caption <=10 words>` (coordinator/narrator/monitor ignored).
 
 ## 3. File Ownership and Hook Signals (SSOT)
 
-Default `PreToolUse` decisions in `/swarm` and `/run-workflow` must be
-unattended-safe **`"deny"` + `@coordinator` escalation** (never `"ask"` /
-`"force_ask"`, which deadlock or auto-deny unattended workers). Set
-`SWARM_GUARD_INTERACTIVE=1` only for interactive single-session runs. Keep
-every hook `<1–2s` (synchronous).
+Default `PreToolUse` decision: unattended-safe **`"deny"` + `@coordinator`**
+(`SWARM_GUARD_INTERACTIVE=1` for interactive runs; all hooks `<1–2s`).
 
-| Asset Class | Repo Signals | Recommended Ownership | Unattended-Safe Guardrail |
+| Asset Class | Repo Signals | Ownership | Unattended-Safe Guardrail |
 | :--- | :--- | :--- | :--- |
-| **Independent Feature Modules** | `src/modules/*`, vertical slices | Dedicated author (`workspace:"share"`) | `PreToolUse` confines writes to `realpath(cwd)` (with `workspacePaths[0]` fallback) or `realpath(artifactDirectoryPath)` (for `swarm_pane` screenshots); blocks `../`, `$VAR`, symlink, & `/etc/*` escapes |
-| **Central Manifests & Protected Modules** | `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `Cargo.lock`, `uv.lock`, `src/auth/`, `src/billing/`, global router | Single integrator or `@coordinator`-approved edit | `PreToolUse` `"deny"` + `@coordinator` escalation on both write/edit tools **and** `run_command` mutations (opt-in `force_ask` with `SWARM_GUARD_INTERACTIVE=1`); toolchain lock blocks wrong package manager (e.g., `npm install`) |
-| **Shared Contracts, Migrations & Codegen** | `src/types/*`, `openapi.*`, `proto/`, `generated/`, `migrations/` | Frozen before sprint; forward migrations only when authorized | `PreToolUse` `"deny"` on edits **and** `run_command` mutating bypasses (`sed -i`, redirections, `rm`/`mv`/`ln`) |
-| **Secrets & Remote Git** | `.env`, `.env.*` (excluding `.env.example`/`.sample`/`.template`), `git push` | Never read secrets or push unless explicitly requested | `PreToolUse` `"deny"` on `.env` writes **and** reads (`read_file`/`view_file` including `AbsolutePath` + `run_command`, case-insensitive on macOS/Windows) and all `git ... push` command variants |
-| **Shared Runtime Test Resources** | `docker-compose*`, local Postgres/Redis, fixed ports | Single `verifier` sequential runs (`workspace:"inherit"`) | `PreToolUse` `"deny"` on destructive DB resets (`dropdb`, `--force-reset`) |
-| **Formatting & Startup Context** | `.prettierrc`, `ruff.toml`, `AGENTS.md`, `docs/system-map.md` | Automated per-file / per-session | `PostToolUse` (disabled-by-default single-file Prettier template scoped to Prettier extensions inside workspace, excluding `package-lock.json`, checking `Path`/`TargetFile`/`AbsolutePath`/`path`/`file_path`, falling back to `workspacePaths[0]` and local `node_modules/.bin/prettier`, `timeout=1.5`, outputs `{}`) + flat `SessionStart` (guards non-dict JSON, falls back to `workspacePaths[0]`, injects pointers only for existing `AGENTS.md` / `docs/system-map.md`). *Note: inline multiline `python3 -c '...'` hooks in `swarm-guardrails-hooks.json` require Unix `sh -c` (macOS/Linux); Windows `cmd /c` is not supported for inline multiline hooks.* |
+| **Feature Modules** | `src/modules/*`, slices | Author (`share`) | `PreToolUse` confines writes to `cwd` (`workspacePaths[0]` fallback) or `artifactDirectoryPath`; blocks `../`, `$VAR`, symlinks, `/etc/*` |
+| **Central Manifests & Protected** | `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `Cargo.lock`, `uv.lock`, `src/auth/`, `src/billing/` | Integrator / `@coordinator` | `PreToolUse` `"deny"` + `@coordinator` on write/edit & `run_command`; blocks `npm install` |
+| **Contracts, Migrations & Codegen** | `src/types/*`, `openapi.*`, `proto/`, `generated/`, `migrations/` | Frozen; forward-only | `PreToolUse` `"deny"` on edits & `run_command` (`sed -i`, redirs, `rm`/`mv`/`ln`) |
+| **Secrets & Remote Git** | `.env`, `.env.*` (except `.env.example`/`.sample`/`.template`), `git push` | Never read or push | `PreToolUse` `"deny"` on `.env` writes & reads (`read_file`/`view_file` `AbsolutePath` + `run_command`, case-insensitive) and `git ... push` |
+| **Shared Runtime** | `docker-compose*`, DB/Redis, ports | Sequential `verifier` (`inherit`) | `PreToolUse` `"deny"` on `dropdb`, `--force-reset` |
+| **Formatting & Startup Context** | `.prettierrc`, `ruff.toml`, `AGENTS.md`, `docs/system-map.md` | Per-file / session | `PostToolUse` (disabled-by-default Prettier template in workspace, excluding `package-lock.json`, `AbsolutePath`/`workspacePaths[0]`/`node_modules/.bin/prettier` fallbacks, `timeout=1.5`, `{}`) + flat `SessionStart` (non-dict JSON guard + `workspacePaths[0]` fallback for `AGENTS.md`/`docs/system-map.md`). *Inline multiline hooks require Unix `sh -c` (no Windows `cmd /c`).* |
 
-> **Pre-Spawn Git Readiness, Validation & Teardown Lifecycle**:
-> - **Pre-spawn**: Before spawning `share`/`branch` workers, validate staged guardrails (`agy plugin validate .agents/plugins/swarm-guardrails --strict` + hook stdin dry-runs), verify `git status --short` is clean (scaffold, repo-relative handoff artifacts, and `.agents/plugins/swarm-guardrails/` committed to `HEAD`), and check branch-vs-`main` divergence (`git rev-list --left-right --count main...HEAD`).
-> - **Post-sprint teardown** (choose one—**never hand-edit `~/.gemini/config/config.json`**):
->   1. **Delete `.agents/plugins/swarm-guardrails/`** (and commit removal if tracked): cleanest for temporary sprint guardrails.
->   2. **In-repo config toggle**: Set `"disabled": true` in `.agents/plugins/swarm-guardrails/plugin.json` to disable the entire plugin (**never** use bare `"enabled": false` in `plugin.json`—unknown top-level fields are silently discarded by the plugin loader), or set `"enabled": false` on individual hook entries in `hooks.json` (which disables only those hooks while leaving `rules/AGENTS.md` active).
->   3. **Global CLI / UI toggle**: Run `agy plugin disable swarm-guardrails` (or disable in the Customizations UI)—note this writes a global override in `~/.gemini/config/config.json` keyed by plugin directory name (`swarm-guardrails`) that overrides `plugin.json` and disables `swarm-guardrails` across other repos until re-enabled via `agy plugin enable swarm-guardrails`.
+> **Pre-Spawn Readiness & Teardown Lifecycle**:
+> - **Pre-spawn**: `agy plugin validate .agents/plugins/swarm-guardrails --strict` + hook dry-runs, clean `git status --short` (scaffold/handoff/guardrails committed), and `git rev-list --left-right --count main...HEAD`.
+> - **Teardown** (never hand-edit `config.json`): (1) delete `.agents/plugins/swarm-guardrails/`; (2) `"disabled": true` in `plugin.json` (never bare `"enabled": false` in `plugin.json`) or per-hook `"enabled": false` in `hooks.json` (`rules/AGENTS.md` stays active); (3) `agy plugin disable swarm-guardrails` (persists in `~/.gemini/config/config.json` across repos sharing that name).
 
 ## 4. Ready-to-Paste Launch Templates
 
-> **Planner-Only Assembly Checklist (`Shared /swarm Invariants`)** — *for the
-> pre-session planner only; never write `Follow Shared /swarm Invariants`
-> inside an output prompt (a fresh `/swarm` session has not read this file)*:
-> - **`swarm_pane` / `plan.json` / `Screenshot:`**: Gate `swarm_pane` on `<skills>` (`swarm_narrator` fallback only when `swarm_pane` is absent and `swarm_narrator` is in `<skills>`). Load `swarm_pane` before adding/briefing workers; write `<appData>/brain/<conversation id>/.system_generated/swarm/plan.json` **once workers are added** (`goal` <=12 words, `tasks`, 1–6 outcome `threads`; no statuses, blockers, or asks; rewrite only on roster/work/goal changes). Gate `Screenshot: <abs-path> | <caption <=10 words>` on visual UI work only: own-line worker board post (coordinator/narrator/monitor posts are ignored), `.png`/`.jpg`/`.jpeg`/`.webp` under worker's `<appData>/brain/<conversation id>/`, full-window on same screen/size/theme, no crops or diffs.
-> - **`swarm_monitor` (`monitor`)**: Standard in `native_swarm` whenever `swarm_monitor` is in `<skills>` (inherits coordinator model; explicit stall-monitor brief; only `monitor` loads `swarm_monitor`). Coordinator never assigns work to, replies to, or kills `monitor`, posts `@monitor resume` after a server restart, and posts a standalone `[done] <summary>` (no `@` mentions) when finished so `monitor` kills its daemon cron.
-> - **Board, Handoffs & Merge-Before-`kill` Landing**: Single-board `main` (`channel` only if live `swarm` exposes `action:"channel"` and >8 workers / 2+ areas); `<author> <-> verifier` peer `@mention` handoffs (no `@coordinator` CC, 2–3 retry circuit-breaker); commit in each `share` worktree and merge sequentially into the main working copy **before calling `swarm{action:"kill"}` on any `share`/`branch` author** (`kill` permanently deletes its workspace). Never push unless requested.
+> **Planner-Only Assembly Rule**: Assemble prompts from Sections 1–3 above.
+> **Never** emit internal doc references (`Follow Shared /swarm Invariants` or
+> `Apply Template B`) inside a fenced launch prompt.
 
-### Template A: Canonical `/swarm` Launch Prompt (Feature / Fix / UI Sprint)
+### Template A: Canonical `/swarm` Prompt (Feature / Fix / UI)
 ```text
 /swarm
 Goal: Implement <feature/fix scope>. Done when `<test/build commands>` pass.
 
-Project context & pre-spawn checks: Read `<AGENTS.md / docs/system-map.md>` first. Verify clean `git status --short` (with `.agents/plugins/swarm-guardrails/` committed if used) and branch-vs-`main` divergence before spawning `share`/`branch` workers.
-
-Swarm UI Overview & Monitor: If `swarm_pane` is in `<skills>`, load `swarm_pane` before adding/briefing workers and write `<appData>/brain/<conversation id>/.system_generated/swarm/plan.json` once workers are added (`goal` <=12 words, `tasks`, 1–6 outcome `threads`; never put statuses, blockers, or asks in `plan.json`, and rewrite only when adding workers, moving work, or changing the goal; never add `narrator` unless requested by name, or if `swarm_pane` is absent and `swarm_narrator` is in `<skills>`). <If visual UI work: workers save full-window .png/.jpg/.jpeg/.webp screenshots (same screen, window size, and theme; no crops or diffs) under their own `<appData>/brain/<conversation id>/` directory and post `Screenshot: <abs-path> | <caption <=10 words>` on its own line in a worker board post.> If `swarm_monitor` is in `<skills>`, add `monitor` (inheriting coordinator model) with an explicit stall-monitor brief (only `monitor` loads `swarm_monitor`; coordinator never assigns work to, replies to, or kills `monitor`, posts `@monitor resume` after a server restart, and posts a standalone `[done] <summary>` with no `@` mentions when finished so `monitor` stops its daemon cron).
+Context & pre-spawn: Read `<AGENTS.md / docs/system-map.md>`. Verify clean `git status --short` (guardrails committed if used) and branch-vs-`main` before spawning `share`/`branch` workers.
+UI & Monitor: If `swarm_pane` in `<skills>`, load pre-add and write `<appData>/brain/<conversation id>/.system_generated/swarm/plan.json` post-add (`goal.title` 4–8w, `goal.line` <=12w, `tasks`, 1–6 `threads`; no statuses/blockers/asks; rewrite only on roster/work/goal changes; no `narrator` unless asked). <If UI work: full-window .png/.jpg/.jpeg/.webp in `<appData>/brain/<conversation id>/` (same screen/size/theme; no crops/diffs) + own-line worker `Screenshot: <abs-path> | <caption <=10 words>`.> If `swarm_monitor` in `<skills>`, add `monitor` with stall-monitor brief (only `monitor` loads `swarm_monitor`; never assign/reply/kill `monitor` unless asked; `@monitor resume` on restart; standalone `[done] <summary>` with no `@` when done).
 
 Authorized Role -> Model Assignments (user-approved):
-- Coordinator: `<default or exact model id>`
-- `<core-author>`: `<exact high-reasoning model id>` (owns `<core-path>`)
-- `<slice-author-1..k>`: `<exact fast/high-quota model id>` (owns `<slice-paths>`)
-- `verifier`: `<exact cross-family or distinct-variant/higher-effort model id>` (`inherit`, read-only review + integration tests)
-- Quota fallback (within approved pool): On `[quota]`/capacity, `swarm{action:"model"}` to `<backup-model-id>` (never leaving a user-restricted pool) and report the switch.
+- Coordinator: `<default/exact id>` | `<core-author>`: `<exact flagship id>` (`<core-path>`) | `<slice-author-1..k>`: `<exact fast id>` (`<slice-paths>`) | `verifier`: `<exact cross-family/variant id>` (`inherit`, read-only review + tests)
+- Quota fallback: On `[quota]`/capacity, `swarm{action:"model"}` to `<backup-id>` (inside approved pool).
 
-Workspace, Handoffs & Landing Rules:
-- Authors use `workspace:"share"`; `verifier` uses `inherit` and never edits feature code directly.
-- Board: single-board `main` (create `channel`s only if live `swarm` exposes `action:"channel"` and >8 workers / 2+ independent areas).
-- Do not edit `<central shared files / lockfiles / no-touch paths>` without `@coordinator` sign-off.
-- Peer handoffs: `<author> <-> verifier` directly via `@mention` (no `@coordinator` CC); max 2–3 retry bounces per issue before escalating to `@coordinator`.
-- Landing & teardown: Commit in each `share` worktree; merge sequentially (`<core-author>` -> `<slice-author-1>` -> ...) after `verifier` sign-off **before `kill`ing any `share`/`branch` author** (`kill` permanently deletes its workspace), then run `<test/build commands>`. Never push. Post standalone `[done] <summary>` (no `@` mentions) and tear down temporary guardrails (delete `.agents/plugins/swarm-guardrails/`, set `"disabled": true` in `plugin.json`, set per-hook `"enabled": false` in `hooks.json`, or run `agy plugin disable swarm-guardrails`).
+Workspace, Handoffs & Landing:
+- Authors use `workspace:"share"`; `verifier` uses `inherit` (read-only). Board: `main` (`channel`s only if `action:"channel"` exists). Do not edit `<no-touch/lockfiles>` without `@coordinator`.
+- Peer handoffs: `<author> <-> verifier` via `@mention` (no `@coordinator` CC; max 2–3 retry bounces before escalating).
+- Landing & teardown: Commit in each `share` worktree; merge sequentially (`<core-author>` -> `<slice-author-1>` -> ...) after `verifier` sign-off **before `kill`ing any `share`/`branch` author** (`kill` deletes workspace), then run `<test/build commands>`. Never push. Post standalone `[done] <summary>` (no `@`) and tear down guardrails.
 ```
 
-### Template B: `/run-workflow` Deterministic Blueprint (Audits / Scans / Mechanical Transforms / Phase 1)
+### Template B: `/run-workflow` Blueprint (Audits / Scans / Transforms / Phase 1)
 ```text
 /run-workflow
 Goal: <Scan/map/audit/transform N targets> and aggregate results into `<output-path>`.
 
-Rules:
-- Pass coarse model tiers only (`model="inherit"|"flash_lite"|"flash"|"pro"` — never exact `/swarm` IDs) and a valid JSON `schema` on every `agent()`. Prefer writing non-trivial scripts to `<appData>/brain/<id>/scratch/workflow.py` and invoking `run_workflow(ScriptPath=..., Description=..., Args=..., Cwd=...)` for easy line-level fixes and reruns.
-- Read-only discovery/audit `agent(...)` calls MUST pass `type_name="research"` (or a non-plan-gated custom agent if `research` is absent—never default `type_name="self"`, which inherits plan gating and deadlocks on `[plan review due]`) and `workspace="inherit"`. For parallel mechanical code-editing transforms, use `workspace="branch"` or `"share"` with an edit-capable `type_name` (`"self"` or custom coder).
-- Choose the lightest primitive per stage: `call_tool(name, **args)` + `WaitMsBeforeAsync` (<=10000 ms, catching `ToolError` and checking `e.denied`) for zero-LLM deterministic tool fan-outs; `await trajectory(tools=[...], last=...)` to mine prior conversation steps; `parallel(items, fn)` for concurrent fail-fast fan-out (one failure cancels the rest); `pipeline(items, fn)` for sequential ordered stages; or stateful `a = agent(...)` -> `await a(prompt, schema)` -> `del a` for bounded multi-turn review/fix loops.
-
-Staged Design:
-1. `phase("Discover")`: Single `agent(..., type_name="research", workspace="inherit", role="Discover targets", model="flash_lite", schema={"type": "array", "items": {"type": "string"}})` (or `call_tool` scan) lists target modules/files.
-2. `phase("Analyze")`: `parallel(targets, lambda t: agent(..., type_name="research", workspace="inherit", role=f"Analyze {t}", model="flash", schema={"type": "object", "properties": {"path": {"type": "string"}, "entry_points": {"type": "array", "items": {"type": "string"}}, "deps": {"type": "array", "items": {"type": "string"}}, "risks": {"type": "array", "items": {"type": "string"}}}, "required": ["path", "entry_points", "deps", "risks"]}))` (use `pipeline(targets, ...)` when stages must run sequentially).
-3. Aggregate deterministically in Python, verify schema completeness, and write `<output-path>` cleanly.
+Rules: Coarse tiers only (`model="inherit"|"flash_lite"|"flash"|"pro"` — never exact `/swarm` IDs) and a JSON `schema` on every `agent()`. Prefer `ScriptPath` in `<appData>/brain/<id>/scratch/workflow.py` (`Args`, `Cwd`). Read-only `agent(...)`: `type_name="research"` (never `type_name="self"`), `workspace="inherit"`; parallel edits: `workspace="branch"`/`"share"` + edit-capable `type_name`. Primitives: `call_tool()` (`WaitMsBeforeAsync` <=10000 ms, `ToolError.denied`), `await trajectory(...)`, `parallel()` (fail-fast), `pipeline()` (sequential), stateful `a = agent(...)` -> `await a(prompt, schema)` -> `del a`.
+1. `phase("Discover")`: `agent(..., type_name="research", workspace="inherit", role="Discover targets", model="flash_lite", schema={"type": "array", "items": {"type": "string"}})` (or `call_tool` scan).
+2. `phase("Analyze")`: `parallel(targets, lambda t: agent(..., type_name="research", workspace="inherit", role=f"Analyze {t}", model="flash", schema={"type": "object", "properties": {"path": {"type": "string"}, "entry_points": {"type": "array", "items": {"type": "string"}}, "deps": {"type": "array", "items": {"type": "string"}}, "risks": {"type": "array", "items": {"type": "string"}}}, "required": ["path", "entry_points", "deps", "risks"]}))` (or `pipeline(targets, ...)`).
+3. Aggregate deterministically in Python, verify schema completeness, and write `<output-path>`.
 ```
 
-### Template C: Legacy Takeover `/swarm` Mode Deltas (Substitute into Template A)
+### Template C: Legacy `/swarm` Mode Deltas (Substitute into Template A)
 
-Use Template A's `/swarm` structure (`Project context & pre-spawn checks`,
-`Swarm UI Overview & Monitor`, `Quota fallback`, `Board`, and `Peer handoffs`
-blocks unchanged) and substitute the mode-specific `Goal`, `Roles`, and
-`Landing` lines below:
+Keep Template A's `Context & pre-spawn`, `UI & Monitor`, `Quota fallback`,
+`Board`, and `Peer handoffs`, and replace `Goal`, roles, `Workspace`, and
+`Landing & teardown`:
 
-- **Interactive Cartography Mode (`workspace:"inherit"`, read-only)**:
-  - `Goal`: Map `<legacy repo/modules>` into `docs/system-map.md` with verified `file:line` evidence (strictly read-only investigators).
-  - `Roles`: `<investigator-1..k>` (optional roles: `infra-runner`, `entry-tracer`, `data-modeler`, `hotspot-auditor`) + `verifier`, all running `workspace:"inherit"` and read-only.
-  - `Compilation & Teardown`: Investigators cite `#seq` when cross-referencing; **Coordinator (or one named writer)** compiles accepted `#seq` summaries into `docs/system-map.md`. `kill` read-only `inherit` investigators once their `#seq` summary is accepted (unless `fork`ing). Post standalone `[done] <summary>` (no `@` mentions) when finished.
-- **Characterization Test Mode (`workspace:"share"` authors + sequential `verifier`)**:
-  - `Goal`: Write characterization tests for `<modules>` locking existing behavior without altering production logic or weakening assertions. Done when `<test commands>` pass.
-  - `Roles`: `<tester-1..k>` (`workspace:"share"`, sharded via `tasks`) + 1 cross-family (or distinct-variant/higher-effort) `verifier` (`workspace:"inherit"`, flags over-mocked stubs and runs shared-DB/port integration tests sequentially).
-  - `Landing`: Commit test additions in each `share` worktree and merge sequentially (`<tester-1>` -> `<tester-2>` -> ...) after `verifier` sign-off **before `kill`ing any `share` tester** (`kill` deletes its workspace). Never push. Post standalone `[done] <summary>` (no `@` mentions) when finished.
+- **Cartography Mode (`workspace:"inherit"`, read-only)**:
+  - `Goal`: Map `<modules>` into `docs/system-map.md` with verified `file:line` evidence.
+  - `Authorized Role -> Model Assignments` & `Workspace`: `<investigator-1..k>` (`infra-runner`, `entry-tracer`, `data-modeler`, `hotspot-auditor`) + `verifier`, all `workspace:"inherit"` and read-only (cite `#seq`).
+  - `Landing & teardown`: **Coordinator (or 1 named writer)** compiles accepted `#seq` summaries into `docs/system-map.md`; `kill` read-only `inherit` investigators once accepted (unless `fork`ing); post standalone `[done] <summary>` (no `@`) and tear down guardrails.
+- **Characterization Mode (`workspace:"share"` testers + sequential `verifier`)**:
+  - `Goal`: Write characterization tests for `<modules>` without altering prod logic or assertions. Done when `<test commands>` pass.
+  - `Authorized Role -> Model Assignments` & `Workspace`: `<tester-1..k>` (`workspace:"share"`, test files only, `tasks`) + 1 cross-family/distinct-variant `verifier` (`workspace:"inherit"`, flags over-mocking, runs shared-DB/port suites sequentially).
+  - `Landing & teardown`: Commit in each `share` worktree and merge sequentially (`<tester-1>` -> `<tester-2>` -> ...) after `verifier` sign-off **before `kill`ing any `share` tester** (`kill` deletes workspace); never push; post standalone `[done] <summary>` (no `@`) and tear down guardrails.
 
-### Template D: Hybrid Two-Session Handoff (Phase 1 `/run-workflow` -> Checkpoint -> Phase 2 `/swarm`)
+### Template D: Hybrid Two-Session Handoff (Phase 1 `/run-workflow` -> Phase 2 `/swarm`)
 
 #### Prompt 1: Phase 1 Read-Only Discovery (`/run-workflow`, Session 1)
 ```text
 /run-workflow
-Goal: Inventory `<target modules/files>` and write a structured handoff artifact at `<committed repo path e.g. docs/system-map.md OR absolute <appData>/brain/<phase1-id>/scratch/plan-manifest.json>`.
+Goal: Inventory `<target modules/files>` and write `<committed repo path e.g. docs/system-map.md OR absolute <appData>/brain/<phase1-id>/scratch/plan-manifest.json>`.
 
-Apply Template B `/run-workflow` rules (`type_name="research"` or non-plan-gated custom agent, `workspace="inherit"`, `role="..."`, coarse tiers `"inherit"|"flash_lite"|"flash"|"pro"` only, fail-fast `parallel()` / sequential `pipeline()`, optional `call_tool()` with `WaitMsBeforeAsync` + `ToolError.denied` handling, and `ScriptPath` in scratch for iterative reruns):
+Rules: Read-only `agent(...)` MUST use `type_name="research"` (never `type_name="self"`), `workspace="inherit"`, `role="..."`, coarse tiers (`"inherit"|"flash_lite"|"flash"|"pro"`), and JSON `schema`; use `parallel()`/`pipeline()`, optional `call_tool()` (`WaitMsBeforeAsync` <=10000 ms, `ToolError.denied`), and `ScriptPath` in scratch.
 1. `phase("Discover")`: `agent(..., type_name="research", workspace="inherit", role="Discover targets", model="flash_lite", schema={"type": "array", "items": {"type": "string"}})`.
 2. `phase("Map")`: `parallel(targets, lambda t: agent(..., type_name="research", workspace="inherit", role=f"Map {t}", model="flash", schema={"type": "object", "properties": {"path": {"type": "string"}, "public_api": {"type": "array", "items": {"type": "string"}}, "deps": {"type": "array", "items": {"type": "string"}}, "test_cmd": {"type": "string"}, "risks": {"type": "array", "items": {"type": "string"}}}, "required": ["path", "public_api", "deps", "test_cmd", "risks"]}))`.
-3. Write `<handoff-artifact-path>` deterministically (read-only on production code) and stop for human review.
+3. Write `<handoff-artifact-path>` deterministically (read-only on prod code) and stop for review.
 ```
 
-> **Inter-Phase Human & Git Checkpoint (Before Launching Phase 2)**:
-> 1. Review `<handoff-artifact-path>`. If repo-relative (e.g., `docs/system-map.md`), commit it (along with `.agents/plugins/swarm-guardrails/` if used) so `git status --short` is clean; if kept in Phase 1 scratch, copy its **exact absolute path** (`<appData>/brain/<phase1-id>/scratch/plan-manifest.json`) into Prompt 2—never pass a bare relative `scratch/...` path across sessions.
-> 2. Open a **fresh conversation session** and paste Prompt 2 below.
+> **Inter-Phase Checkpoint**: Review `<handoff-artifact-path>`. If repo-relative (`docs/system-map.md`), commit it (plus optional `.agents/plugins/swarm-guardrails/`) so `git status --short` is clean; if in Phase 1 scratch, pass its **exact absolute path** (`<appData>/brain/<phase1-id>/scratch/plan-manifest.json`) into Prompt 2 (never a relative `scratch/...` path). Paste Prompt 2 in a **fresh session**.
 
 #### Prompt 2: Phase 2 Collaborative Implementation (`/swarm`, Fresh Session 2)
 ```text
 /swarm
-Goal: Implement `<scope>` using the verified findings in `<committed repo path e.g. docs/system-map.md OR absolute <appData>/brain/<phase1-id>/scratch/plan-manifest.json>`. Done when `<test/build commands>` pass.
+Goal: Implement `<scope>` using `<committed repo path e.g. docs/system-map.md OR absolute <appData>/brain/<phase1-id>/scratch/plan-manifest.json>`. Done when `<test/build commands>` pass.
 
-Project context & pre-spawn checks: Every worker reads `<handoff-artifact-path>` (and `<AGENTS.md>` if present) first—do not re-discover the whole repo. Verify clean `git status --short` (committed repo handoff artifact + optional `.agents/plugins/swarm-guardrails/`) and branch-vs-`main` divergence before spawning `share`/`branch` workers.
-
-Swarm UI Overview & Monitor: If `swarm_pane` is in `<skills>`, load `swarm_pane` before adding/briefing workers and write `<appData>/brain/<conversation id>/.system_generated/swarm/plan.json` once workers are added (`goal` <=12 words, `tasks`, 1–6 outcome `threads`; never put statuses, blockers, or asks in `plan.json`, and rewrite only on roster/work/goal changes; never add `narrator` unless requested by name, or if `swarm_pane` is absent and `swarm_narrator` is in `<skills>`). <If visual UI work: workers save full-window .png/.jpg/.jpeg/.webp screenshots (same screen, window size, and theme; no crops or diffs) under their own `<appData>/brain/<conversation id>/` directory and post `Screenshot: <abs-path> | <caption <=10 words>` on its own line in a worker board post.> If `swarm_monitor` is in `<skills>`, add `monitor` (inheriting coordinator model) with an explicit stall-monitor brief (only `monitor` loads `swarm_monitor`; coordinator never assigns work to, replies to, or kills `monitor`, posts `@monitor resume` after a server restart, and posts a standalone `[done] <summary>` with no `@` mentions when finished so `monitor` stops its daemon cron).
+Context & pre-spawn: Read `<handoff-artifact-path>` (and `<AGENTS.md>`) first—do not re-discover the repo. Verify clean `git status --short` (handoff + optional guardrails committed) and branch-vs-`main` before spawning `share`/`branch` workers.
+UI & Monitor: If `swarm_pane` in `<skills>`, load pre-add and write `<appData>/brain/<conversation id>/.system_generated/swarm/plan.json` post-add (`goal.title` 4–8w, `goal.line` <=12w, `tasks`, 1–6 `threads`; no statuses/blockers/asks; rewrite only on roster/work/goal changes; no `narrator` unless asked). <If UI work: full-window .png/.jpg/.jpeg/.webp in `<appData>/brain/<conversation id>/` and own-line worker `Screenshot: <abs-path> | <caption <=10 words>`.> If `swarm_monitor` in `<skills>`, add `monitor` with stall-monitor brief (only `monitor` loads `swarm_monitor`; never assign/reply/kill `monitor` unless asked; `@monitor resume` on restart; standalone `[done] <summary>` with no `@` when done).
 
 Authorized Role -> Model Assignments (user-approved):
-- Coordinator: `<default or exact model id>`
-- `<core-author>`: `<exact high-reasoning model id>` (owns `<core-path>`)
-- `<slice-author-1..k>`: `<exact fast/high-quota model id>` (owns `<slice-paths>`)
-- `verifier`: `<exact cross-family or distinct-variant/higher-effort model id>` (`inherit`, read-only review + integration tests)
-- Quota fallback (within approved pool): On `[quota]`/capacity, `swarm{action:"model"}` to `<backup-model-id>` (never leaving a user-restricted pool) and report the switch.
+- Coordinator: `<default/exact id>` | `<core-author>`: `<exact flagship id>` (`<core-path>`) | `<slice-author-1..k>`: `<exact fast id>` (`<slice-paths>`) | `verifier`: `<exact cross-family/variant id>` (`inherit`, read-only review + tests)
+- Quota fallback: On `[quota]`/capacity, `swarm{action:"model"}` to `<backup-id>` (inside approved pool).
 
-Workspace, Handoffs & Landing Rules:
-- Authors use `workspace:"share"`; `verifier` uses `inherit` and never edits feature code directly.
-- Board: single-board `main` (create `channel`s only if live `swarm` exposes `action:"channel"` and >8 workers / 2+ independent areas).
-- Do not edit `<central shared files / lockfiles / no-touch paths>` without `@coordinator` sign-off.
-- Peer handoffs: `<author> <-> verifier` directly via `@mention` (no `@coordinator` CC); max 2–3 retry bounces per issue before escalating to `@coordinator`.
-- Landing & teardown: Commit in each `share` worktree; merge sequentially (`<core-author>` -> `<slice-author-1>` -> ...) after `verifier` sign-off **before `kill`ing any `share`/`branch` author** (`kill` permanently deletes its workspace), then run `<test/build commands>`. Never push. Post standalone `[done] <summary>` (no `@` mentions) and tear down temporary guardrails (delete `.agents/plugins/swarm-guardrails/`, set `"disabled": true` in `plugin.json`, set per-hook `"enabled": false` in `hooks.json`, or run `agy plugin disable swarm-guardrails`).
+Workspace, Handoffs & Landing:
+- Authors use `workspace:"share"`; `verifier` uses `inherit` (read-only). Board: `main` (`channel`s only if `action:"channel"` exists). Do not edit `<no-touch/lockfiles>` without `@coordinator`.
+- Peer handoffs: `<author> <-> verifier` via `@mention` (no `@coordinator` CC; max 2–3 retry bounces before escalating).
+- Landing & teardown: Commit in each `share` worktree; merge sequentially (`<core-author>` -> `<slice-author-1>` -> ...) after `verifier` sign-off **before `kill`ing any `share`/`branch` author** (`kill` deletes workspace), then run `<test/build commands>`. Never push. Post standalone `[done] <summary>` (no `@`) and tear down guardrails.
 ```

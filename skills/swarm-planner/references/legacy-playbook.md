@@ -78,7 +78,7 @@ For legacy repos, prioritize:
   (`kill` permanently deletes the worker's workspace).
 - **Cross-phase session boundaries**: Follow the SSOT session-boundary and
   handoff-path rules in
-  [task-matrices.md](./task-matrices.md#1-orchestration-router-scenario-matrix):
+  [task-matrices.md](./task-matrices.md#1-orchestration-router--scenario-matrix):
   start a fresh session between Cartography (Session 1), Characterization
   (Session 2), and Hardening (Session 3+) so discovery transcripts do not bloat
   implementation context, retired worker names (`tester` -> `tester-2`) do not
