@@ -89,6 +89,7 @@ detect_git_state() {
 }
 
 run_preflight_tests() {
+  bash -n "${BASH_SOURCE[0]}"
   PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -B -m json.tool "$SRC_DIR/examples/swarm-guardrails-plugin.json" >/dev/null
   PYTHONDONTWRITEBYTECODE=1 "$PYTHON" -B -m json.tool "$SRC_DIR/examples/swarm-guardrails-hooks.json" >/dev/null
   if [[ -d "$REPO_ROOT/tests" ]]; then
@@ -163,6 +164,10 @@ if [[ "$MODE" == "status" ]]; then
       echo "DANGLING: $DEST_DIR -> $link_target (target does not exist)"
       exit 1
     fi
+    if [[ ! -d "$DEST_DIR" ]]; then
+      echo "DRIFT: $DEST_DIR symlinks to non-directory $link_target"
+      exit 1
+    fi
     dest_real="$(cd -P "$DEST_DIR" && pwd)"
     src_real="$(cd -P "$SRC_DIR" && pwd)"
     if [[ "$dest_real" != "$src_real" ]]; then
@@ -180,22 +185,28 @@ if [[ "$MODE" == "status" ]]; then
     exit 1
   fi
   diff_out=""
-  if diff_out="$(diff -rq -x '__pycache__' -x '*.pyc' -x '*.pyo' -x '.DS_Store' "$SRC_DIR" "$DEST_DIR" 2>&1)"; then
-    echo "OK (copy): $DEST_DIR matches $SRC_DIR"
-    exit 0
-  else
+  if ! diff_out="$(diff -rq -x '__pycache__' -x '*.pyc' -x '*.pyo' -x '.DS_Store' "$SRC_DIR" "$DEST_DIR" 2>&1)"; then
     echo "DRIFT: $DEST_DIR differs from $SRC_DIR"
     printf '%s\n' "$diff_out"
     exit 1
   fi
+  for exec_rel in "scripts/model_matrix.py" "examples/pretool-guard.py"; do
+    if [[ -f "$SRC_DIR/$exec_rel" && ! -x "$DEST_DIR/$exec_rel" ]]; then
+      echo "DRIFT: $DEST_DIR/$exec_rel is missing executable permission (+x)"
+      exit 1
+    fi
+  done
+  internal_symlinks="$(find "$DEST_DIR" -type l 2>/dev/null || true)"
+  if [[ -n "$internal_symlinks" ]]; then
+    echo "DRIFT: $DEST_DIR contains unexpected symlink(s):"
+    printf '%s\n' "$internal_symlinks"
+    exit 1
+  fi
+  echo "OK (copy): $DEST_DIR matches $SRC_DIR"
+  exit 0
 fi
 
-if [[ "$SKIP_TESTS" -eq 0 ]]; then
-  run_preflight_tests
-fi
-
-mkdir -p "$SKILLS_ROOT"
-
+# Enforce --symlink linked/dirty worktree guard before running tests or creating $SKILLS_ROOT.
 if [[ "$MODE" == "symlink" ]]; then
   if [[ "$IS_LINKED_WORKTREE" -eq 1 || "$IS_DIRTY_WORKTREE" -eq 1 ]]; then
     worktree_reason=""
@@ -212,20 +223,79 @@ if [[ "$MODE" == "symlink" ]]; then
     fi
     echo "WARNING: Symlinking from a $worktree_reason ($REPO_ROOT) due to --force; pruning this worktree will dangle $DEST_DIR." >&2
   fi
-  rm -rf "$DEST_DIR"
-  ln -s "$SRC_DIR" "$DEST_DIR"
-  echo "Symlinked $DEST_DIR -> $SRC_DIR"
-  exit 0
+fi
+
+if [[ "$SKIP_TESTS" -eq 0 ]]; then
+  run_preflight_tests
+fi
+
+mkdir -p "$SKILLS_ROOT"
+
+TMP_STAGE=""
+BACKUP_ROOT=""
+BACKUP_ITEM=""
+SWAP_COMMITTED=0
+
+cleanup() {
+  local rc=$?
+  if [[ "$SWAP_COMMITTED" -eq 0 && -n "$BACKUP_ITEM" && ( -L "$BACKUP_ITEM" || -e "$BACKUP_ITEM" ) ]]; then
+    if [[ ! -L "$DEST_DIR" && ! -e "$DEST_DIR" ]]; then
+      mv "$BACKUP_ITEM" "$DEST_DIR" 2>/dev/null || true
+    fi
+  fi
+  if [[ -n "$TMP_STAGE" && ( -L "$TMP_STAGE" || -e "$TMP_STAGE" ) ]]; then
+    rm -rf "$TMP_STAGE" 2>/dev/null || true
+  fi
+  if [[ -n "$BACKUP_ROOT" && -d "$BACKUP_ROOT" ]]; then
+    if [[ "$SWAP_COMMITTED" -eq 1 ]]; then
+      if ! rm -rf "$BACKUP_ROOT" 2>/dev/null; then
+        echo "WARNING: Installed $DEST_DIR, but failed to clean backup directory $BACKUP_ROOT" >&2
+      fi
+    else
+      rmdir "$BACKUP_ROOT" 2>/dev/null || true
+    fi
+  fi
+  return "$rc"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+backup_existing_dest() {
+  if [[ -L "$DEST_DIR" || -e "$DEST_DIR" ]]; then
+    BACKUP_ROOT="$(mktemp -d "$SKILLS_ROOT/.swarm-planner.bak.XXXXXX")"
+    BACKUP_ITEM="$BACKUP_ROOT/swarm-planner"
+    mv "$DEST_DIR" "$BACKUP_ITEM"
+  fi
+}
+
+remove_committed_backup() {
+  if [[ -n "$BACKUP_ROOT" && -d "$BACKUP_ROOT" ]]; then
+    if rm -rf "$BACKUP_ROOT" 2>/dev/null; then
+      BACKUP_ROOT=""
+      BACKUP_ITEM=""
+    else
+      echo "WARNING: Installed $DEST_DIR, but failed to clean backup directory $BACKUP_ROOT" >&2
+      BACKUP_ROOT=""
+      BACKUP_ITEM=""
+    fi
+  fi
+}
+
+if [[ "$MODE" == "symlink" ]]; then
+  backup_existing_dest
+  if ln -s "$SRC_DIR" "$DEST_DIR"; then
+    SWAP_COMMITTED=1
+    remove_committed_backup
+    echo "Symlinked $DEST_DIR -> $SRC_DIR"
+    exit 0
+  else
+    echo "Failed to create symlink at $DEST_DIR" >&2
+    exit 1
+  fi
 fi
 
 TMP_STAGE="$(mktemp -d "$SKILLS_ROOT/.swarm-planner.tmp.XXXXXX")"
-BACKUP_DIR=""
-cleanup() {
-  if [[ -n "${TMP_STAGE:-}" && -e "$TMP_STAGE" ]]; then
-    rm -rf "$TMP_STAGE"
-  fi
-}
-trap cleanup EXIT
 
 if command -v rsync >/dev/null 2>&1; then
   rsync -a \
@@ -236,26 +306,19 @@ if command -v rsync >/dev/null 2>&1; then
     "$SRC_DIR/" "$TMP_STAGE/"
 else
   cp -Rp "$SRC_DIR/." "$TMP_STAGE/"
+  chmod 755 "$TMP_STAGE"
   find "$TMP_STAGE" -name '__pycache__' -prune -exec rm -rf {} +
   find "$TMP_STAGE" \( -name '*.pyc' -o -name '*.pyo' -o -name '.DS_Store' \) -delete
 fi
 chmod +x "$TMP_STAGE/scripts/model_matrix.py" "$TMP_STAGE/examples/pretool-guard.py"
 
-if [[ -L "$DEST_DIR" || -e "$DEST_DIR" ]]; then
-  BACKUP_DIR="$SKILLS_ROOT/.swarm-planner.bak.$$"
-  rm -rf "$BACKUP_DIR"
-  mv "$DEST_DIR" "$BACKUP_DIR"
-fi
+backup_existing_dest
 
 if mv "$TMP_STAGE" "$DEST_DIR"; then
+  SWAP_COMMITTED=1
   TMP_STAGE=""
-  if [[ -n "$BACKUP_DIR" && ( -L "$BACKUP_DIR" || -e "$BACKUP_DIR" ) ]]; then
-    rm -rf "$BACKUP_DIR"
-  fi
+  remove_committed_backup
 else
-  if [[ -n "$BACKUP_DIR" && ( -L "$BACKUP_DIR" || -e "$BACKUP_DIR" ) ]]; then
-    mv "$BACKUP_DIR" "$DEST_DIR" || true
-  fi
   echo "Failed to swap staged install into $DEST_DIR" >&2
   exit 1
 fi
