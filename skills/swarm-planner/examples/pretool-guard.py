@@ -885,12 +885,23 @@ def _check_inline_shell(
             ),
         }
 
+    safe_long_flags = {
+        "--login",
+        "--norc",
+        "--noprofile",
+        "--posix",
+        "--verbose",
+        "--noediting",
+        "--restricted",
+        "--version",
+        "--help",
+    }
     saw_c = False
     saw_s = False
     idx = 0
     while idx < len(cmd_args):
         arg = cmd_args[idx]
-        if arg == "--":
+        if arg in {"--", "-"}:
             idx += 1
             break
         if arg in {"--rcfile", "--init-file"} or arg.startswith(("--rcfile=", "--init-file=")):
@@ -898,30 +909,39 @@ def _check_inline_shell(
                 "decision": "deny",
                 "reason": f"Inline shell `{cmd_name}` init/rcfile override is blocked.",
             }
-        if arg in {"-o", "+o"}:
+        if arg in {"-o", "+o", "-O", "+O"}:
             idx += 2
             continue
         if arg.startswith("--"):
-            idx += 1
-            continue
-        if arg.startswith("-") and len(arg) > 1:
+            if arg in safe_long_flags:
+                idx += 1
+                continue
+            return {
+                "decision": "deny",
+                "reason": f"Unrecognized inline shell long flag `{arg}` on `{cmd_name}` (fail-closed).",
+            }
+        if len(arg) > 1 and arg[0] in {"-", "+"}:
+            sign = arg[0]
             flags_body = arg[1:]
             if not all(ch.isalpha() for ch in flags_body):
                 return {
                     "decision": "deny",
                     "reason": f"Unrecognized inline shell flag `{arg}` on `{cmd_name}` (fail-closed).",
                 }
-            if "c" in flags_body:
-                saw_c = True
-            if "s" in flags_body:
-                saw_s = True
-            if flags_body.endswith("o"):
+            if any(ch in {"o", "O"} for ch in flags_body[:-1]):
+                return {
+                    "decision": "deny",
+                    "reason": f"Ambiguous bundled inline shell option `{arg}` on `{cmd_name}` (fail-closed).",
+                }
+            if sign == "-":
+                if "c" in flags_body:
+                    saw_c = True
+                if "s" in flags_body:
+                    saw_s = True
+            if flags_body.endswith(("o", "O")):
                 idx += 2
             else:
                 idx += 1
-            continue
-        if arg.startswith("+") and len(arg) > 1:
-            idx += 1
             continue
         break
 
