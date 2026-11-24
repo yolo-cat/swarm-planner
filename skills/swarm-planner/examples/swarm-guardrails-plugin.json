@@ -1,4 +1,6 @@
 {
   "name": "swarm-guardrails",
-  "author": "Project Team"
+  "version": "1.0.0",
+  "author": "Project Team",
+  "description": "Pre-session guardrail hooks and boundary rules for Antigravity swarms."
 }
