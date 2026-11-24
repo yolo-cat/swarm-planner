@@ -35,13 +35,9 @@ Before generating the `/swarm` Launch Prompt, confirm:
 - [ ] Central files (`package.json`, lockfiles, global routers) have a clear
       owner.
 - [ ] Key library versions are aligned via `context7-mcp` if needed.
-- [ ] Role-to-Model IDs and `[quota]` fallback chain are validated per
-      `SKILL.md` Step 5 / [task-matrices.md](./task-matrices.md#2-heterogeneous-role-model-strategy-swarm)
-      (`--from-swarm-json - --validate <comma-separated-ids> --require-quota`,
-      plus `--allowed-pool` when pool-restricted).
-- [ ] Git tree is clean (scaffold and optional guardrails committed) per
-      [task-matrices.md](./task-matrices.md#3-file-ownership-and-hook-signals-ssot)
-      before spawning `share`/`branch` workers.
+- [ ] Pre-flight model validation (`model_matrix.py --validate`) and clean git
+      tree (scaffold + optional guardrails committed) pass per `SKILL.md` Step 5
+      and [task-matrices.md](./task-matrices.md#2-heterogeneous-role-model-strategy-swarm).
 
 ## Greenfield-Specific Deltas
 
@@ -57,9 +53,13 @@ Before generating the `/swarm` Launch Prompt, confirm:
   distinct-variant/higher-effort within a single-family pool) `verifier` to
   enforce contract conformance, integration wiring, and zero duplicated helpers
   across vertical slices.
-- **Swarm UI Overview & Visual progression (`swarm_pane`)**: Load `swarm_pane`
-  before briefing/adding workers and write `plan.json` for **all** `/swarm`
-  sessions. For UI slices specifically, instruct frontend authors to save
-  screenshots under their own `<appData>/brain/<conversation id>/` directory
-  (allowed by `pretool-guard.py` via `artifactDirectoryPath`) and flag each
-  milestone with `Screenshot: <abs-path> | <caption <=10 words>`.
+- **Visual UI slices (`swarm_pane` `Screenshot:` milestones)**: Follow the
+  `<skills>`-gated `swarm_pane` / `plan.json` lifecycle in
+  [task-matrices.md](./task-matrices.md#4-ready-to-paste-launch-templates)
+  (load `swarm_pane` before adding workers, write `plan.json` once workers are
+  added with no statuses/blockers/asks). For UI slices, instruct frontend
+  authors to save full-window `.png`/`.jpg`/`.jpeg`/`.webp` screenshots (same
+  screen, window size, and theme—no crops or diffs) under their own
+  `<appData>/brain/<conversation id>/` directory (`artifactDirectoryPath`) and
+  post `Screenshot: <abs-path> | <caption <=10 words>` on its own line in their
+  worker board posts.

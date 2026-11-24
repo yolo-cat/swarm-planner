@@ -4,15 +4,13 @@ Antigravity Pre-Session orchestration planner skill & tooling repository.
 
 Helps you evaluate and align on execution engine, model + thinking-effort allocation, and project-tailored guardrails **before** spending multi-agent quota:
 
-- **Step 0 Fast-Exit & Triage**: Immediately exits to Single Session / `/plan` for small or sequential edits before spending tokens on recon or model snapshots; splits remaining work into **Lightweight** (compact Step 4 alignment) vs. **Project-Level** flows.
-- **Three-Way Engine Router**: `/run-workflow` (coarse tiers `inherit`/`flash_lite`/`flash`/`pro` + `type_name="research"` for read-only passes) vs. `/swarm` (exact catalog IDs + `low`/`medium`/`high`/`xhigh`/`max` effort suffixes) vs. **Hybrid** (Phase 1 `/run-workflow` -> Phase 2 `/swarm`), backed by batched `ask_question` interviews and SSOT templates in [task-matrices.md](./skills/swarm-planner/references/task-matrices.md).
-- **Live Model × Thinking Effort × Quota Snapshot**: `skills/swarm-planner/scripts/model_matrix.py` parses `swarm{action:"models", all:true}` JSON (`--from-swarm-json -`) or `agy models` CLI output (`--from-agy`), emits `--format json` family metadata (`vendor`, `quota_uniform`, `quotas_by_effort`), and validates chosen `/swarm` IDs with `--validate`, `--require-quota`, `--require-diverse`, and `--allowed-pool`.
-  - When invoked from a target project `cwd`, resolve `<skill-dir>` from the `swarm-planner` `SKILL.md` path in `<skills>` (global default: `~/.gemini/config/skills/swarm-planner/scripts/model_matrix.py`), and run `make install-status` (or `./scripts/install.sh --status`) when dogfooding inside this repo to detect repo-vs-installed drift.
-  - `--from-swarm-json` with `--require-quota` enforces usable live quota; `--from-agy` checks model existence only (`quota=unknown`).
-- **Unattended-Safe Project Guardrails**: Co-designs toggleable `.agents/plugins/swarm-guardrails/` bundles (`plugin.json`, `hooks.json`, `hooks/pretool-guard.py`, `rules/AGENTS.md`):
-  - `PreToolUse` (`pretool-guard.py`, matching `run_command|read_file|view_file|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content`) confines file writes/edits to `cwd` or `artifactDirectoryPath` (for `swarm_pane` screenshots), blocks `.env` reads (`read_file`/`view_file`) and `run_command` `.env`/push/forbidden-path/protected-path bypasses (case-insensitive on macOS/Windows), and defaults to unattended-safe `"deny"` + `@coordinator` escalation (`SWARM_GUARD_INTERACTIVE=1` opts into `"force_ask"` for interactive single-session runs).
-  - `PostToolUse` ships disabled by default (`"enabled": false`) as a working single-file Prettier template scoped to Prettier extensions inside `cwd` (excluding `package-lock.json`) with `timeout=1.5` (`{}` output); `SessionStart` uses a flat handler list pointing only to existing `AGENTS.md` / `docs/system-map.md`.
-  - Verify clean `git status` and commit/register `.agents/plugins/swarm-guardrails/` **before** spawning `share`/`branch` workers so worktrees inherit it, and disable/remove after the sprint (`agy plugin disable swarm-guardrails` or `"enabled": false`).
+- **Step 0 Fast-Exit & Triage**: Exits immediately to Single Session / `/plan` for small or sequential edits before spending tokens on recon or model snapshots; splits remaining work into **Lightweight** (compact Step 4 alignment; skips custom hooks by default unless explicitly requested in Step 3) vs. **Project-Level** flows.
+- **Three-Way Engine Router**: Routes between `/run-workflow` (coarse tiers `inherit`/`flash_lite`/`flash`/`pro`, `type_name="research"` for read-only passes vs. `workspace="branch"`/`"share"` for parallel mechanical edits, `parallel`/`pipeline`, stateful multi-turn `agent()`, `call_tool` + `WaitMsBeforeAsync` + `ToolError.denied`, `trajectory()`, and `Args`/`Cwd`/`ScriptPath`), `/swarm` (exact catalog IDs + `low`/`medium`/`high`/`xhigh`/`max` effort suffixes, `<skills>`-gated `swarm_pane` `plan.json` written after adding workers + own-line full-window UI `Screenshot:`, `<skills>`-gated `swarm_monitor` + standalone `[done] <summary>` teardown, and merge-before-`kill` landing), and **Hybrid** (fresh Phase 1 `/run-workflow` session -> human/clean-git checkpoint -> fresh Phase 2 `/swarm` session via two separate pasteable prompts using committed repo-relative or absolute Phase 1 `<appData>/brain/<phase1-id>/scratch/...` handoff paths), backed by SSOT templates in [task-matrices.md](./skills/swarm-planner/references/task-matrices.md).
+- **Live Model × Thinking Effort × Quota Snapshot**: `skills/swarm-planner/scripts/model_matrix.py` parses `swarm{action:"models", all:true}` JSON (`--from-swarm-json -`) or `agy models` CLI output (`--from-agy`), emits `--format json` catalog metadata (`vendor`, `quota_uniform`, `quotas_by_effort`), and validates chosen `/swarm` IDs with `--validate`, `--require-quota`, `--require-diverse`, and `--allowed-pool` (`--allowed-pool`, `--require-diverse`, and `--require-quota` require `--validate`, exiting `2` if omitted; `--validate <ids> --format json` outputs structured JSON with keys `valid`, `results`, `diversity`, `errors`, `warnings` on both exit `0` and exit `1`). Resolve `<skill-dir>` from `<skills>` and run `make install-status` (`./scripts/install.sh --status` or `--check`) when dogfooding inside this repo.
+- **Unattended-Safe Project Guardrails**: Co-designs toggleable `.agents/plugins/swarm-guardrails/` bundles (`plugin.json`, `hooks.json` at plugin root, `hooks/pretool-guard.py`, `rules/AGENTS.md`):
+  - `PreToolUse` (`pretool-guard.py`) enforces workspace/`artifactDirectoryPath` confinement, blocks `.env` reads/writes (`read_file`/`view_file` including `AbsolutePath` + `run_command`), blocks `git push` and protected-path mutations, and defaults to unattended-safe `"deny"` + `@coordinator` escalation (`SWARM_GUARD_INTERACTIVE=1` opts into `"force_ask"` for interactive single-session runs).
+  - `PostToolUse` (disabled by default via per-hook `"enabled": false`, with `AbsolutePath`, `workspacePaths[0]`, and local `node_modules/.bin/prettier` fallbacks) and `SessionStart` (`workspacePaths[0]` fallback + non-dict JSON guard, injecting existing `AGENTS.md` / `docs/system-map.md`) use inline multiline `python3 -c '...'` commands that require Unix `sh -c` (macOS/Linux; Windows `cmd /c` is not supported for inline multiline hooks).
+  - Validate staged bundles with `agy plugin validate .agents/plugins/swarm-guardrails --strict`, verify clean `git status`, and commit before spawning `share`/`branch` workers. After sprint teardown, either (1) delete `.agents/plugins/swarm-guardrails/`, (2) set `"disabled": true` in `plugin.json` (never bare `"enabled": false` in `plugin.json`) or per-hook `"enabled": false` in `hooks.json` (`rules/AGENTS.md` remains active), or (3) run `agy plugin disable swarm-guardrails` (persists a global directory-name override in `~/.gemini/config/config.json` across repos sharing that name; never hand-edit `config.json`).
 
 ## Repository Layout
 
@@ -28,7 +26,8 @@ swarm-planner/
 │       ├── scripts/model_matrix.py
 │       ├── references/
 │       └── examples/
-└── tests/                          # Unit & dry-run regression tests
+└── tests/                          # Unit, dry-run & cross-module contract tests
+    ├── test_contracts.py
     ├── test_install.py
     ├── test_model_matrix.py
     └── test_pretool_guard.py
@@ -50,17 +49,20 @@ Test and install (atomic copy sync) into `~/.gemini/config/skills/swarm-planner`
 make install
 ```
 
-Check repo-vs-installed drift (missing install, dangling symlink, worktree target mismatch, or modified files):
+Check repo-vs-installed drift (missing install, dangling symlink, worktree target mismatch, executable-bit/symlink drift, or modified files):
 
 ```bash
 make install-status
 # or: ./scripts/install.sh --status  (alias: --check)
 ```
 
-Or use `make install-symlink` / `--symlink` for live-linked local development (requires `--force` in linked or dirty git worktrees to avoid dangling symlinks when pruned), `--skip-tests` to skip pre-install tests, or `make uninstall` / `--uninstall` to remove the global copy:
+Or use `make install-symlink` / `./scripts/install.sh --symlink` for live-linked local development (in linked or dirty git worktrees, pass `make install-symlink INSTALL_FLAGS=--force` or `./scripts/install.sh --symlink --force` to override the dangling-worktree safety guard), `--skip-tests` to skip pre-install tests, or `make uninstall` / `./scripts/install.sh --uninstall` to remove the global copy:
 
 ```bash
 ./scripts/install.sh --symlink
+# in a linked or dirty git worktree:
+make install-symlink INSTALL_FLAGS=--force
+# or: ./scripts/install.sh --symlink --force
 ./scripts/install.sh --uninstall
 ```
 

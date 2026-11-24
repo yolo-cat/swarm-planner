@@ -71,9 +71,17 @@ For legacy repos, prioritize:
 - **External runtime collisions**: `workspace:"share"` isolates files, **not**
   local databases, Redis, or hardcoded ports. Keep integration runs in one
   sequential `verifier`.
-- **Context bloat on huge files**: Instruct the `/swarm` coordinator to `kill`
-  read-only investigators once their `#seq` summary is accepted (unless
-  `fork`ing them).
-- **Session boundaries**: Start fresh sessions between phases to keep the board
-  clean, avoid retired worker name collisions (`tester` -> `tester-2`), and let
-  the human review deliverables before advancing.
+- **Context bloat vs. `share` worktree safety**: Instruct the `/swarm`
+  coordinator to `kill` read-only `inherit` investigators once their `#seq`
+  summary is accepted (unless `fork`ing them), but in Characterization/Fix
+  sessions **never `kill` a `share`/`branch` author before merging its commit**
+  (`kill` permanently deletes the worker's workspace).
+- **Cross-phase session boundaries**: Follow the SSOT session-boundary and
+  handoff-path rules in
+  [task-matrices.md](./task-matrices.md#1-orchestration-router-scenario-matrix):
+  start a fresh session between Cartography (Session 1), Characterization
+  (Session 2), and Hardening (Session 3+) so discovery transcripts do not bloat
+  implementation context, retired worker names (`tester` -> `tester-2`) do not
+  collide, and the human reviews committed `docs/system-map.md` (or an explicit
+  absolute Phase 1 `<appData>/brain/<phase1-id>/scratch/...` artifact) with a
+  clean git tree before spawning `share` authors.
