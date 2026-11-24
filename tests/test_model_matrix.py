@@ -66,6 +66,33 @@ SAMPLE_SWARM_PAYLOAD = {
     },
 }
 
+DIVERSITY_PAYLOAD = {
+    "models": [
+        "gemini-4-neon-low",
+        "gemini-4-neon-high",
+        "gemini-4-neon-xhigh",
+        "gemini-4-neon-max",
+        "gemini-4-hydrogen-high",
+        "claude-sonnet-5-5-high",
+    ],
+    "display_names": {
+        "gemini-4-neon-low": "Gemini 4 Neon (Low)",
+        "gemini-4-neon-high": "Gemini 4 Neon (High)",
+        "gemini-4-neon-xhigh": "Gemini 4 Neon (XHigh)",
+        "gemini-4-neon-max": "Gemini 4 Neon (Max)",
+        "gemini-4-hydrogen-high": "Gemini 4 Hydrogen (High)",
+        "claude-sonnet-5-5-high": "Claude Sonnet 5.5 (High)",
+    },
+    "quotas": {
+        "gemini-4-neon-low": {"quota_remaining": "80%", "quota_resets": "2h"},
+        "gemini-4-neon-high": {"quota_remaining": "80%", "quota_resets": "2h"},
+        "gemini-4-neon-xhigh": {"quota_remaining": "80%", "quota_resets": "2h"},
+        "gemini-4-neon-max": {"quota_remaining": "75%", "quota_resets": "2h"},
+        "gemini-4-hydrogen-high": {"quota_remaining": "90%", "quota_resets": "2h"},
+        "claude-sonnet-5-5-high": {"quota_remaining": "70%", "quota_resets": "3h"},
+    },
+}
+
 
 class ModelMatrixTests(unittest.TestCase):
     def test_parse_swarm_json_orchestrators_and_per_variant_quotas(self) -> None:
@@ -77,15 +104,24 @@ class ModelMatrixTests(unittest.TestCase):
         self.assertEqual(orch["effort"], "default")
         self.assertEqual(orch["family_key"], "gemini-pro-orchestrator")
         self.assertEqual(orch["family_label"], "Gemini Pro Orchestrator")
+        self.assertEqual(orch["vendor"], "gemini")
 
         families = mm.group_by_family(entries)
         flash = next(f for f in families if f["family_key"] == "gemini-3-flash-*")
         self.assertEqual(flash["family_label"], "Gemini 3 Flash")
+        self.assertEqual(flash["vendor"], "gemini")
+        self.assertTrue(flash["quota_uniform"])
+        self.assertEqual(flash["quota_remaining"], "100%")
         self.assertEqual(set(flash["efforts"].keys()), {"low", "high"})
         self.assertEqual(flash["quotas_by_effort"]["low"]["quota_remaining"], "100%")
         self.assertEqual(flash["quotas_by_effort"]["high"]["quota_remaining"], "100%")
 
         claude = next(f for f in families if f["family_key"] == "claude-sonnet-4-6-*")
+        self.assertEqual(claude["vendor"], "claude")
+        self.assertFalse(claude["quota_uniform"])
+        self.assertIsNone(claude["quota_remaining"])
+        self.assertIsNone(claude["quota_resets"])
+        self.assertIsNone(claude["quota_note"])
         self.assertEqual(claude["quotas_by_effort"]["low"]["quota_remaining"], "20%")
         self.assertEqual(claude["quotas_by_effort"]["high"]["quota_remaining"], "0%")
 
@@ -121,6 +157,8 @@ class ModelMatrixTests(unittest.TestCase):
             "gemini-pro-orchestrator\tGemini Pro Orchestrator\n"
             "ID   Display Name\n"
             "---\n"
+            "warning:   rate limit notice\n"
+            "note:   ignored diagnostic\n"
             "⠹ gemini-3-flash-low\tGemini 3 Flash (Low)\r\n"
             "claude-sonnet-4-6-high   Claude Sonnet 4.6 (High)\n"
             "plain-default-model\n"
@@ -171,6 +209,17 @@ class ModelMatrixTests(unittest.TestCase):
         self.assertFalse(ok_unknown)
         self.assertIn("Unknown model", msgs_unknown[0])
 
+        # Wildcard family pattern suggests concrete IDs
+        ok_wild, msgs_wild = mm.validate_models(swarm_entries, ["gemini-3-flash-*"])
+        self.assertFalse(ok_wild)
+        self.assertIn("gemini-3-flash-low, gemini-3-flash-high", msgs_wild[0])
+
+        # Empty or whitespace-only target list fails explicitly
+        for empty_targets in ([""], [" ", "  "]):
+            ok_empty, msgs_empty = mm.validate_models(swarm_entries, empty_targets)
+            self.assertFalse(ok_empty)
+            self.assertIn("requires at least one non-empty model", msgs_empty[0])
+
         # 0% quota without note fails
         ok_zero, msgs_zero = mm.validate_models(swarm_entries, ["exhausted-model-medium"])
         self.assertFalse(ok_zero)
@@ -188,7 +237,59 @@ class ModelMatrixTests(unittest.TestCase):
         self.assertFalse(ok_agy_req)
         self.assertIn("quota=unknown (agy source — existence only)", msgs_agy_req[0])
 
-    def test_cli_stdin_validation_and_require_quota_exit_codes(self) -> None:
+    def test_strict_quota_parsing_sentinels_numeric_exhaustion_and_max_suffix(self) -> None:
+        payload = {
+            "models": [
+                "m-empty-quota-low",
+                "m-unknown-quota-low",
+                "m-dash-quota-low",
+                "m-na-quota-low",
+                "m-bool-quota-low",
+                "m-zero-int-low",
+                "m-zero-float-low",
+                "m-zero-pct-low",
+                "gemini-4-neon-max",
+            ],
+            "quotas": {
+                "m-empty-quota-low": {"quota_remaining": ""},
+                "m-unknown-quota-low": {"quota_remaining": "unknown"},
+                "m-dash-quota-low": {"quota_remaining": "-"},
+                "m-na-quota-low": {"quota_remaining": "N/A"},
+                "m-bool-quota-low": {"quota_remaining": True},
+                "m-zero-int-low": {"quota_remaining": 0},
+                "m-zero-float-low": {"quota_remaining": 0.0},
+                "m-zero-pct-low": {"quota_remaining": "0.0%"},
+                "gemini-4-neon-max": {"quota_remaining": 75},
+            },
+        }
+        entries = mm.parse_swarm_json(json.dumps(payload))
+
+        # Non-numeric sentinels fail --require-quota
+        for model_id in (
+            "m-empty-quota-low",
+            "m-unknown-quota-low",
+            "m-dash-quota-low",
+            "m-na-quota-low",
+            "m-bool-quota-low",
+        ):
+            ok_req, msgs_req = mm.validate_models(entries, [model_id], require_quota=True)
+            self.assertFalse(ok_req, f"Expected failure for sentinel {model_id}: {msgs_req}")
+            self.assertIn("non-numeric quota value", msgs_req[0])
+
+        # Numeric 0 / 0.0 / "0.0%" fail validation even without --require-quota
+        for model_id in ("m-zero-int-low", "m-zero-float-low", "m-zero-pct-low"):
+            ok_zero, msgs_zero = mm.validate_models(entries, [model_id])
+            self.assertFalse(ok_zero, f"Expected exhaustion for {model_id}: {msgs_zero}")
+            self.assertIn("quota remaining", msgs_zero[0])
+
+        # *-max suffix parses and validates cleanly
+        max_entry = next(e for e in entries if e["id"] == "gemini-4-neon-max")
+        self.assertEqual(max_entry["effort"], "max")
+        self.assertEqual(max_entry["family_key"], "gemini-4-neon-*")
+        ok_max, msgs_max = mm.validate_models(entries, ["gemini-4-neon-max"], require_quota=True)
+        self.assertTrue(ok_max, msgs_max)
+
+    def test_cli_stdin_file_implicit_pipe_and_validation_edge_cases(self) -> None:
         raw_json = json.dumps(SAMPLE_SWARM_PAYLOAD)
         ok_proc = subprocess.run(
             [
@@ -208,6 +309,64 @@ class ModelMatrixTests(unittest.TestCase):
         self.assertEqual(ok_proc.returncode, 0, ok_proc.stderr)
         self.assertIn("OK: gpt-5-4-xhigh", ok_proc.stdout)
         self.assertIn("OK: gemini-pro-orchestrator", ok_proc.stdout)
+        self.assertIn("POOL DIVERSITY: cross-vendor", ok_proc.stdout)
+
+        # --validate "" and --validate " , " must exit 1 (never print table & exit 0)
+        for empty_arg in ("", " , "):
+            empty_val = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-swarm-json", "-", "--validate", empty_arg],
+                input=raw_json,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(empty_val.returncode, 1, empty_val.stdout)
+            self.assertIn("ERROR:", empty_val.stdout)
+
+        # --from-swarm-json "" must exit 2
+        empty_path = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "--from-swarm-json", ""],
+            input="",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(empty_path.returncode, 2)
+        self.assertIn("Error loading models:", empty_path.stderr)
+
+        # --from-swarm-json <file_path>
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file = Path(tmpdir) / "models.json"
+            json_file.write_text(raw_json, encoding="utf-8")
+            file_proc = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-swarm-json", str(json_file), "--format", "json"],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(file_proc.returncode, 0, file_proc.stderr)
+            parsed_file = json.loads(file_proc.stdout)
+            self.assertEqual(parsed_file["count"], 10)
+
+            # Missing file -> exit 2
+            missing_proc = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-swarm-json", str(Path(tmpdir) / "nope.json")],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(missing_proc.returncode, 2)
+
+        # Implicit non-empty piped stdin without --from-swarm-json flag
+        pipe_proc = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "--validate", "gpt-5-4-xhigh", "--require-quota"],
+            input=raw_json,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(pipe_proc.returncode, 0, pipe_proc.stderr)
+        self.assertIn("OK: gpt-5-4-xhigh", pipe_proc.stdout)
 
         bad_proc = subprocess.run(
             [
@@ -254,7 +413,7 @@ class ModelMatrixTests(unittest.TestCase):
         )
         self.assertEqual(empty_explicit.returncode, 2)
 
-        # JSON output preserves quotas_by_effort
+        # JSON output preserves quotas_by_effort and normalizes mixed top-level quota + vendor
         json_proc = subprocess.run(
             [sys.executable, str(SCRIPT_PATH), "--from-swarm-json", "-", "--format", "json"],
             input=raw_json,
@@ -266,15 +425,166 @@ class ModelMatrixTests(unittest.TestCase):
         parsed = json.loads(json_proc.stdout)
         self.assertEqual(parsed["count"], 10)
         claude = next(f for f in parsed["families"] if f["family_key"] == "claude-sonnet-4-6-*")
+        self.assertEqual(claude["vendor"], "claude")
+        self.assertFalse(claude["quota_uniform"])
+        self.assertIsNone(claude["quota_remaining"])
+        self.assertIsNone(claude["quota_resets"])
         self.assertIn("quotas_by_effort", claude)
         self.assertEqual(claude["quotas_by_effort"]["high"]["quota_remaining"], "0%")
 
-    def test_cli_empty_non_tty_stdin_falls_back_to_agy(self) -> None:
+    def test_malformed_swarm_payloads_exit_2_without_traceback(self) -> None:
+        bad_payloads = [
+            "{not-json",
+            "[]",
+            json.dumps({"models": None}),
+            json.dumps({"models": []}),
+            json.dumps({"models": [123]}),
+            json.dumps({"models": ["m"], "quotas": None}),
+            json.dumps({"models": ["m"], "display_names": None}),
+            json.dumps({"models": ["m"], "display_names": {"m": None}}),
+            json.dumps({"models": ["m"], "quotas": {"m": "bad"}}),
+        ]
+        for payload in bad_payloads:
+            proc = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-swarm-json", "-"],
+                input=payload,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 2, f"Expected exit 2 for {payload}: {proc.stderr}")
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertIn("Error loading models:", proc.stderr)
+
+    def test_pool_diversity_require_diverse_and_allowed_pool(self) -> None:
+        raw_json = json.dumps(DIVERSITY_PAYLOAD)
+
+        # Cross-vendor passes --require-diverse
+        cross_proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--from-swarm-json",
+                "-",
+                "--validate",
+                "gemini-4-neon-high,claude-sonnet-5-5-high",
+                "--require-quota",
+                "--require-diverse",
+            ],
+            input=raw_json,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(cross_proc.returncode, 0, cross_proc.stdout + cross_proc.stderr)
+        self.assertIn("POOL DIVERSITY: cross-vendor", cross_proc.stdout)
+
+        # Single-vendor cross-variant passes --require-diverse and --allowed-pool
+        sv_cv_proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--from-swarm-json",
+                "-",
+                "--validate",
+                "gemini-4-neon-high,gemini-4-hydrogen-high",
+                "--require-quota",
+                "--require-diverse",
+                "--allowed-pool",
+                "gemini-4-neon-*,gemini-4-hydrogen-high",
+            ],
+            input=raw_json,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(sv_cv_proc.returncode, 0, sv_cv_proc.stdout + sv_cv_proc.stderr)
+        self.assertIn("POOL DIVERSITY: single-vendor cross-variant", sv_cv_proc.stdout)
+
+        # Single-variant warns by default (exit 0) and fails with --require-diverse (exit 1)
+        sv_warn = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--from-swarm-json",
+                "-",
+                "--validate",
+                "gemini-4-neon-xhigh,gemini-4-neon-low",
+                "--require-quota",
+            ],
+            input=raw_json,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(sv_warn.returncode, 0, sv_warn.stdout)
+        self.assertIn("WARNING: POOL DIVERSITY: single-variant", sv_warn.stdout)
+
+        sv_fail = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--from-swarm-json",
+                "-",
+                "--validate",
+                "gemini-4-neon-xhigh,gemini-4-neon-low",
+                "--require-quota",
+                "--require-diverse",
+            ],
+            input=raw_json,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(sv_fail.returncode, 1, sv_fail.stdout)
+        self.assertIn("ERROR: POOL DIVERSITY: single-variant", sv_fail.stdout)
+
+        # Single target with --require-diverse fails
+        single_fail = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--from-swarm-json",
+                "-",
+                "--validate",
+                "gemini-4-neon-max",
+                "--require-diverse",
+            ],
+            input=raw_json,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(single_fail.returncode, 1)
+        self.assertIn("requires at least 2 validated models", single_fail.stdout)
+
+        # Out-of-pool fallback rejected by --allowed-pool
+        out_of_pool = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_PATH),
+                "--from-swarm-json",
+                "-",
+                "--validate",
+                "gemini-4-neon-high,claude-sonnet-5-5-high",
+                "--allowed-pool",
+                "gemini-4-neon-high,gemini-4-hydrogen-high",
+            ],
+            input=raw_json,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(out_of_pool.returncode, 1)
+        self.assertIn("outside --allowed-pool", out_of_pool.stdout)
+
+    def test_cli_agy_explicit_fallback_stderr_filtering_and_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             fake_bin = Path(tmpdir)
             fake_agy = fake_bin / "agy"
             fake_agy.write_text(
                 "#!/bin/sh\n"
+                "printf 'warning:  rate limit approaching\\n' >&2\n"
                 "printf '\\r⠋ Fetching available models...\\r'\n"
                 "printf 'gemini-pro-orchestrator\\tGemini Pro Orchestrator\\n'\n"
                 "printf 'gemini-3-flash-low\\tGemini 3 Flash (Low)\\n'\n",
@@ -285,6 +595,7 @@ class ModelMatrixTests(unittest.TestCase):
             env = os.environ.copy()
             env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
 
+            # Empty non-tty stdin falls back to agy and ignores stderr warning
             proc = subprocess.run(
                 [sys.executable, str(SCRIPT_PATH)],
                 input="",
@@ -296,6 +607,19 @@ class ModelMatrixTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("gemini-pro-orchestrator", proc.stdout)
             self.assertIn("gemini-3-flash-*", proc.stdout)
+            self.assertNotIn("warning:", proc.stdout)
+
+            # Explicit --from-agy
+            explicit_agy = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-agy", "--format", "json"],
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(explicit_agy.returncode, 0, explicit_agy.stderr)
+            parsed = json.loads(explicit_agy.stdout)
+            self.assertEqual(parsed["count"], 2)
 
             # --validate with --require-quota fails against agy fallback
             val_proc = subprocess.run(
@@ -308,6 +632,43 @@ class ModelMatrixTests(unittest.TestCase):
             )
             self.assertEqual(val_proc.returncode, 1)
             self.assertIn("agy source — existence only", val_proc.stdout)
+
+            # agy returning 0 with "No models found" -> exit 2
+            fake_agy.write_text("#!/bin/sh\nprintf 'No models found\\n'\n", encoding="utf-8")
+            empty_agy = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-agy"],
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(empty_agy.returncode, 2)
+            self.assertIn("No models parsed", empty_agy.stderr)
+
+            # agy failing with non-zero -> exit 2
+            fake_agy.write_text("#!/bin/sh\nprintf 'auth failed\\n' >&2\nexit 1\n", encoding="utf-8")
+            fail_agy = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-agy"],
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(fail_agy.returncode, 2)
+            self.assertIn("`agy models` failed", fail_agy.stderr)
+
+            # Missing agy binary on PATH -> exit 2
+            empty_path_env = env.copy()
+            empty_path_env["PATH"] = str(Path(tmpdir) / "empty-bin")
+            Path(empty_path_env["PATH"]).mkdir()
+            missing_agy = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--from-agy"],
+                text=True,
+                capture_output=True,
+                env=empty_path_env,
+                check=False,
+            )
+            self.assertEqual(missing_agy.returncode, 2)
 
 
 if __name__ == "__main__":

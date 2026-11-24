@@ -2,7 +2,7 @@
   "swarm-pretool-guard": {
     "PreToolUse": [
       {
-        "matcher": "run_command|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
+        "matcher": "run_command|read_file|view_file|write_file|edit_file|write_to_file|replace_file_content|multi_replace_file_content",
         "hooks": [
           {
             "type": "command",
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c 'import json,os,shutil,subprocess,sys\ntry:\n d=json.load(sys.stdin); a=(d.get(\"toolCall\") or {}).get(\"args\") or {}; p=a.get(\"Path\") or a.get(\"TargetFile\") or a.get(\"path\") or \"\"; c=d.get(\"cwd\") or os.getcwd(); t=p if os.path.isabs(p) else os.path.join(c,p); f=shutil.which(\"prettier\")\n if p and not d.get(\"error\") and f and os.path.isfile(t): subprocess.run([f,\"--write\",t],cwd=c,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)\nexcept Exception:\n pass\nprint(\"{}\")'",
+            "command": "python3 -c 'import json,os,shutil,subprocess,sys\ntry:\n d=json.load(sys.stdin); a=(d.get(\"toolCall\") or {}).get(\"args\") or {}; p=a.get(\"Path\") or a.get(\"TargetFile\") or a.get(\"path\") or a.get(\"file_path\") or \"\"; c=d.get(\"cwd\") or os.getcwd(); t=p if os.path.isabs(p) else os.path.join(c,p); rt=os.path.realpath(t) if p else \"\"; rc=os.path.realpath(c); ext=os.path.splitext(rt)[1].lower(); f=shutil.which(\"prettier\")\n if p and not d.get(\"error\") and f and os.path.isfile(rt) and os.path.commonpath([rt,rc])==rc and ext in {\".js\",\".jsx\",\".ts\",\".tsx\",\".css\",\".scss\",\".json\",\".md\",\".yaml\",\".yml\"} and os.path.basename(rt).lower()!=\"package-lock.json\": subprocess.run([f,\"--write\",rt],cwd=c,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=1.5,check=False)\nexcept Exception:\n pass\nprint(\"{}\")'",
             "timeout": 5
           }
         ]
