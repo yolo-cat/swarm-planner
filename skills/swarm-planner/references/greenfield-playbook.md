@@ -4,8 +4,8 @@ Starting from a brand-new repository has no legacy coupling, but faces a
 different failure mode: parallel workers inventing incompatible APIs,
 directory conventions, toolchain commands, or colliding on central setup files.
 
-> For the core Role-to-Model Strategy, File Ownership & Hook Signals table, and
-> Launch Templates, use the SSOT in
+> For the core Role-to-Model Strategy, File Ownership & Hook Signals table,
+> generic guardrail lifecycle, and Launch Templates, use the SSOT in
 > [task-matrices.md](./task-matrices.md#2-heterogeneous-role-model-strategy-swarm).
 > This playbook covers **greenfield-specific deltas only**.
 
@@ -35,32 +35,31 @@ Before generating the `/swarm` Launch Prompt, confirm:
 - [ ] Central files (`package.json`, lockfiles, global routers) have a clear
       owner.
 - [ ] Key library versions are aligned via `context7-mcp` if needed.
-- [ ] Role-to-Model IDs and `[quota]` fallback chain are validated via
-      `python3 "<skill-dir>/scripts/model_matrix.py"` (global default
-      `~/.gemini/config/skills/swarm-planner/scripts/model_matrix.py`,
-      [model_matrix.py](../scripts/model_matrix.py)) with `--require-quota`
-      when using `--from-swarm-json`.
-- [ ] If using `.agents/plugins/swarm-guardrails/`, commit/register the plugin
-      (including `./hooks/pretool-guard.py`) **before** spawning `share`/`branch`
-      workers so worktrees inherit it.
+- [ ] Role-to-Model IDs and `[quota]` fallback chain are validated per
+      `SKILL.md` Step 5 / [task-matrices.md](./task-matrices.md#2-heterogeneous-role-model-strategy-swarm)
+      (`--from-swarm-json - --validate <comma-separated-ids> --require-quota`,
+      plus `--allowed-pool` when pool-restricted).
+- [ ] Git tree is clean (scaffold and optional guardrails committed) per
+      [task-matrices.md](./task-matrices.md#3-file-ownership-and-hook-signals-ssot)
+      before spawning `share`/`branch` workers.
 
 ## Greenfield-Specific Deltas
 
 - **Guardrail priorities** (see SSOT in
-  [task-matrices.md](./task-matrices.md#3-file-ownership-and-hook-signals-ssot)):
+  [task-matrices.md](./task-matrices.md#3-file-ownership-and-hook-signals-ssot)
+  for generic `deny` semantics, hook latency, pre-spawn commit, and teardown):
   - Prioritize toolchain locking (`pnpm`/`uv` over `npm install`) and frozen
-    contract/codegen protection (`src/types/*`, `openapi.*`, `generated/*`)
-    using unattended-safe `"deny"` + `@coordinator` escalation.
+    contract/codegen protection (`src/types/*`, `openapi.*`, `generated/*`).
   - Enable the `PostToolUse` single-file formatter template (`prettier`,
     `ruff format`, `gofmt`) only if formatting diff noise across parallel
-    slices is a concern; keep it `<1–2s` and returning `{}`.
-  - Tear down or disable `.agents/plugins/swarm-guardrails/` after the MVP
-    sprint (`agy plugin disable swarm-guardrails` or `"enabled": false`).
-- **Verifier focus (Spec & DRY Guardian)**: Assign the cross-family `verifier`
-  to enforce contract conformance, integration wiring, and zero duplicated
-  helpers across vertical slices.
-- **Visual progression (`swarm_pane`)**: For UI slices, write `plan.json` after
-  adding workers and instruct frontend authors to save screenshots under their
-  own `<appData>/brain/<conversation id>/` directory (allowed by
-  `pretool-guard.py` via `artifactDirectoryPath`) and flag each milestone with
-  `Screenshot: <abs-path> | <caption <=10 words>`.
+    slices is a concern.
+- **Verifier focus (Spec & DRY Guardian)**: Assign the cross-family (or
+  distinct-variant/higher-effort within a single-family pool) `verifier` to
+  enforce contract conformance, integration wiring, and zero duplicated helpers
+  across vertical slices.
+- **Swarm UI Overview & Visual progression (`swarm_pane`)**: Load `swarm_pane`
+  before briefing/adding workers and write `plan.json` for **all** `/swarm`
+  sessions. For UI slices specifically, instruct frontend authors to save
+  screenshots under their own `<appData>/brain/<conversation id>/` directory
+  (allowed by `pretool-guard.py` via `artifactDirectoryPath`) and flag each
+  milestone with `Screenshot: <abs-path> | <caption <=10 words>`.
