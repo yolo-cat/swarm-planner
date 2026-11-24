@@ -17,14 +17,14 @@
   `package-lock.json`, `pnpm-lock.yaml`, `Cargo.lock`, `uv.lock`, `src/auth/`,
   `src/billing/`, plus any `<central router/module>` mirrored into
   `PROTECTED_PATH_PATTERNS` in `pretool-guard.py`): Protected by `PreToolUse`
-  guardrails (unattended-safe `deny` by default; set `SWARM_GUARD_INTERACTIVE=1`
-  only for interactive single-session prompts). Escalate needed edits to
-  `@coordinator`.
+  guardrails; escalate needed edits to `@coordinator`.
 
 ## No-Touch Zones
 
 - `<path/to/legacy-billing-cron>`: Production dependency; do not refactor.
-- `<path/to/generated>`: Auto-generated; regenerate via `<command>` only.
+- Applied migrations (`migrations/`) & auto-generated code (`generated/`,
+  `openapi-gen/`): Blocked by `FORBIDDEN_PATH_PATTERNS` in `pretool-guard.py`;
+  regenerate via `<command>` or create authorized forward migrations only.
 - `.env` / `.env.*` secrets (excluding `.env.example`, `.env.sample`,
   `.env.template`): Never read or edit directly.
 - `.agents/plugins/swarm-guardrails/`: Do not edit, disable, or delete active
