@@ -1,6 +1,6 @@
-# swarm-planner
+# swarm-planner-skills
 
-Antigravity Pre-Session orchestration planner skill & tooling repository.
+Antigravity Pre-Session orchestration planner skills & tooling repository.
 
 Helps you evaluate and align on execution engine, model + thinking-effort allocation, and project-tailored guardrails **before** spending multi-agent quota:
 
